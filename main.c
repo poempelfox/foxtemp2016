@@ -14,7 +14,7 @@
 #include <util/delay.h>
 
 #include "adc.h"
-#include "hyt221.h"
+#include "sht31.h"
 #include "rfm12.h"
 #include "swserialo.h"
 
@@ -37,7 +37,7 @@ uint8_t batvolt = 0;
 uint32_t pktssent = 0;
 
 /* FIXME: Store this in EEPROM / Read from there on Boot */
-uint8_t sensorid = 7; // 0 - 255 / 0xff
+uint8_t sensorid = 3; // 0 - 255 / 0xff
 
 /* The frame we're preparing to send. */
 static uint8_t frametosend[9];
@@ -101,11 +101,11 @@ int main(void) {
   CLKPR = _BV(CLKPS1) | _BV(CLKPS0);
   
   swserialo_init();
-  swserialo_printpgm_P(PSTR("HaWo TempDevice 2016.\r\n"));
+  swserialo_printpgm_P(PSTR("FoxtTempDevice 2016.\r\n"));
   
   rfm12_initport();
   adc_init();
-  hyt221_init();
+  sht31_init();
   
   _delay_ms(500); /* The RFM12 needs some time to start up */
   
@@ -137,7 +137,7 @@ int main(void) {
   /* All set up, enable interrupts and go. */
   sei();
 
-  hyt221_startmeas();
+  sht31_startmeas();
 
   uint16_t transmitinterval = 4; /* this is in multiples of the watchdog timer timeout (8S)! */
   uint8_t mlcnt = 0;
@@ -149,15 +149,15 @@ int main(void) {
       adc_power(1);
       adc_start();
       /* Fetch values from PREVIOUS measurement */
-      struct hyt221data hd;
-      hyt221_read(&hd);
+      struct sht31data hd;
+      sht31_read(&hd);
       temp = 0xffff;
       hum = 0xffff;
       if (hd.valid) {
         temp = hd.temp;
         hum = hd.hum;
       }
-      hyt221_startmeas();
+      sht31_startmeas();
       /* read voltage from ADC */
       batvolt = adc_read() >> 2;
       adc_power(0);

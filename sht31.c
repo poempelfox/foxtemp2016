@@ -49,7 +49,7 @@
  *  */
 #define DELAYVAL 14
 
-void hyt221_init(void)
+void sht31_init(void)
 {
   /* Initialize I2C bus: Enable pullups. */
   BBTWIPORT |= _BV(SCLPIN);
