@@ -125,9 +125,9 @@ int main(void) {
   PRR |= _BV(PRTIM0) | _BV(PRTIM1);
   /* Disable analog comparator */
   ACSR |= _BV(ACD);
-  /* Disable unneeded digital input registers for ADC pin PA1 (used for voltage
+  /* Disable unneeded digital input registers for ADC pin PA2 (used for voltage
    * measurement) and PA7 (unused/floating). */
-  DIDR0 |= _BV(ADC1D) | _BV(ADC7D);
+  DIDR0 |= _BV(ADC2D) | _BV(ADC7D);
   PORTA |= _BV(PA7);
   /* PB2 is the IRQ line from the RFM12. We don't use it. Make sure that pin
    * is tristated on our side (it won't float, the RFM12B pulls it) */

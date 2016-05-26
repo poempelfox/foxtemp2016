@@ -16,8 +16,8 @@
 #define BBTWIDDR DDRA
 
 /* Which pins of the port */
-#define SDAPIN PA2
-#define SCLPIN PA3
+#define SDAPIN PA1
+#define SCLPIN PA0
 
 #define I2C_READ  0x01
 #define I2C_WRITE 0x00

@@ -9,8 +9,8 @@ void adc_init(void)
 {
   /* Select prescaler for ADC, disable autotriggering, turn off ADC */
   ADCSRA = _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
-  /* Select reference voltage (VCC) and pin PA1 */
-  ADMUX = 1;
+  /* Select reference voltage (VCC) and pin PA2 */
+  ADMUX = 2;
   /* Disable ADC for now (gets reenabled for the measurements */
   PRR |= _BV(PRADC);
 }
@@ -42,3 +42,4 @@ uint16_t adc_read(void)
   res |= (ADCH << 8);
   return res;
 }
+
