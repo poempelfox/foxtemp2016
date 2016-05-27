@@ -25,7 +25,7 @@ AVRDMCU	= t84
 # Clock Frequency of the AVR. Needed for various calculations.
 CPUFREQ		= 1000000UL
 
-SRCS	= adc.c main.c rfm12.c sht31.c swserialo.c
+SRCS	= adc.c eeprom.c main.c rfm12.c sht31.c swserialo.c
 PROG	= foxtemp2016
 
 # compiler flags

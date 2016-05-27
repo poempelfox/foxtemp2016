@@ -14,8 +14,9 @@
 #include <util/delay.h>
 
 #include "adc.h"
-#include "sht31.h"
+#include "eeprom.h"
 #include "rfm12.h"
+#include "sht31.h"
 #include "swserialo.h"
 
 /* We need to disable the watchdog very early, because it stays active
@@ -36,13 +37,15 @@ uint8_t batvolt = 0;
 /* How often did we send a packet? */
 uint32_t pktssent = 0;
 
-/* FIXME: Store this in EEPROM / Read from there on Boot */
+/* This is just a fallback value, in case we cannot read this from EEPROM
+ * on Boot */
 uint8_t sensorid = 3; // 0 - 255 / 0xff
 
 /* The frame we're preparing to send. */
 static uint8_t frametosend[10];
 
-static uint8_t calculatecrc(uint8_t * data, uint8_t len) {
+static uint8_t calculatecrc(uint8_t * data, uint8_t len)
+{
   uint8_t i, j;
   uint8_t res = 0;
   for (j = 0; j < len; j++) {
@@ -76,7 +79,8 @@ static uint8_t calculatecrc(uint8_t * data, uint8_t len) {
  * Byte  8: Battery voltage
  * Byte  9: CRC
  */
-void prepareframe(void) {
+void prepareframe(void)
+{
   frametosend[ 0] = 0xCC;
   frametosend[ 1] = sensorid;
   frametosend[ 2] = 6; /* 6 bytes of data follow (CRC not counted) */
@@ -89,6 +93,15 @@ void prepareframe(void) {
   frametosend[ 9] = calculatecrc(frametosend, 9);
 }
 
+void loadsettingsfromeeprom(void)
+{
+  uint8_t e1 = eeprom_read_byte(&ee_sensorid);
+  uint8_t e2 = eeprom_read_byte(&ee_invsensorid);
+  if ((e1 ^ 0xff) == e2) { /* OK, the 'checksum' matches. Use this as our ID */
+    sensorid = e1;
+  }
+}
+
 /* This is just to wake us up from sleep, it doesn't really do anything. */
 ISR(WATCHDOG_vect)
 {
@@ -96,7 +109,8 @@ ISR(WATCHDOG_vect)
   /* Nothing to do here. */
 }
 
-int main(void) {
+int main(void)
+{
   /* Initialize stuff */
   /* Clock down to 1 MHz. */
   CLKPR = _BV(CLKPCE);
@@ -108,6 +122,7 @@ int main(void) {
   rfm12_initport();
   adc_init();
   sht31_init();
+  loadsettingsfromeeprom();
   
   _delay_ms(500); /* The RFM12 needs some time to start up */
   
