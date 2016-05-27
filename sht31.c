@@ -187,7 +187,7 @@ uint8_t sht31_crc(uint8_t b1, uint8_t b2)
   crc ^= b1;
   for (b = 0; b < 8; b++) {
     if (crc & 0x80) {
-      crc = (crc << 1) ^ 0x31;
+      crc = (crc << 1) ^ 0x131;
     } else {
       crc = crc << 1;
     }
@@ -195,7 +195,7 @@ uint8_t sht31_crc(uint8_t b1, uint8_t b2)
   crc ^= b2;
   for (b = 0; b < 8; b++) {
     if (crc & 0x80) {
-      crc = (crc << 1) ^ 0x31;
+      crc = (crc << 1) ^ 0x131;
     } else {
       crc = crc << 1;
     }
@@ -222,7 +222,7 @@ void sht31_read(struct sht31data * d)
   if ((sht31_crc(b1, b2) == b3) && (sht31_crc(b4, b5) == b6)) {
     d->valid = 1;
   }
-  d->hum = (b1 << 8) | b2;
-  d->temp = (b4 << 8) | b5;
+  d->temp = (b1 << 8) | b2;
+  d->hum = (b4 << 8) | b5;
   bbtwi_stop();
 }
