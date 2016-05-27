@@ -40,7 +40,7 @@ uint32_t pktssent = 0;
 uint8_t sensorid = 3; // 0 - 255 / 0xff
 
 /* The frame we're preparing to send. */
-static uint8_t frametosend[9];
+static uint8_t frametosend[10];
 
 static uint8_t calculatecrc(uint8_t * data, uint8_t len) {
   uint8_t i, j;
@@ -67,24 +67,26 @@ static uint8_t calculatecrc(uint8_t * data, uint8_t len) {
  *
  * Byte  0: Startbyte (=0xCC)
  * Byte  1: Sensor-ID (0 - 255/0xff)
- * Byte  2: Number of data bytes that follow (15)
- * Byte  3: temperature MSB (raw value from SHT15)
- * Byte  4: temperature LSB
- * Byte  5: humidity MSB (raw value from SHT15)
- * Byte  6: humidity LSB
- * Byte  7: Battery voltage
- * Byte  8: CRC
+ * Byte  2: Number of data bytes that follow (6)
+ * Byte  3: Sensortype (=0xf7 for FoxTemp)
+ * Byte  4: temperature MSB (raw value from SHT31)
+ * Byte  5: temperature LSB
+ * Byte  6: humidity MSB (raw value from SHT31)
+ * Byte  7: humidity LSB
+ * Byte  8: Battery voltage
+ * Byte  9: CRC
  */
 void prepareframe(void) {
   frametosend[ 0] = 0xCC;
   frametosend[ 1] = sensorid;
-  frametosend[ 2] = 5; /* 5 bytes of data follow (CRC not counted) */
-  frametosend[ 3] = (temp >> 8) & 0xff;
-  frametosend[ 4] = (temp >> 0) & 0xff;
-  frametosend[ 5] = (hum >> 8) & 0xff;
-  frametosend[ 6] = (hum >> 0) & 0xff;
-  frametosend[ 7] = batvolt;
-  frametosend[ 8] = calculatecrc(frametosend, 8);
+  frametosend[ 2] = 6; /* 6 bytes of data follow (CRC not counted) */
+  frametosend[ 3] = 0xf7; /* Sensor type: FoxTemp */
+  frametosend[ 4] = (temp >> 8) & 0xff;
+  frametosend[ 5] = (temp >> 0) & 0xff;
+  frametosend[ 6] = (hum >> 8) & 0xff;
+  frametosend[ 7] = (hum >> 0) & 0xff;
+  frametosend[ 8] = batvolt;
+  frametosend[ 9] = calculatecrc(frametosend, 9);
 }
 
 /* This is just to wake us up from sleep, it doesn't really do anything. */
@@ -139,7 +141,7 @@ int main(void) {
 
   sht31_startmeas();
 
-  uint16_t transmitinterval = 4; /* this is in multiples of the watchdog timer timeout (8S)! */
+  uint16_t transmitinterval = 2; /* this is in multiples of the watchdog timer timeout (8S)! */
   uint8_t mlcnt = 0;
   while (1) { /* Main loop, we should never exit it. */
     mlcnt++;
@@ -159,17 +161,22 @@ int main(void) {
       }
       sht31_startmeas();
       /* read voltage from ADC */
-      batvolt = adc_read() >> 2;
+      uint16_t adcval = adc_read();
       adc_power(0);
+      /* we use a 1 M / 10 MOhm voltage divider, thus the voltage we see on
+       * the ADC is 10/11 of the real voltage. */
+      if (adcval >= 0x3a2d) {
+        batvolt = 0xff;
+      } else {
+        batvolt = ((adcval * 11) / 10) >> 2;
+      }
       prepareframe();
       swserialo_printpgm_P(PSTR(" TX "));
-      rfm12_sendarray(frametosend, 9);
+      rfm12_sendarray(frametosend, 10);
       pktssent++;
-      if (batvolt > 153) { /* ca. 1.8 volts */
-        transmitinterval = 4;
-      } else { /* supercap half empty - increase transmitinterval to save power */
-        transmitinterval = 7;
-      }
+      /* Semirandom delay: the lowest bits from the ADC are mostly noise, so
+       * we use that */
+      transmitinterval = 3 + (adcval & 0x0001);
       rfm12_setsleep(1);
       mlcnt = 0;
     }
