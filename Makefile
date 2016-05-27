@@ -69,9 +69,13 @@ hostreceiverforjeelink: hostreceiverforjeelink.c
 	gcc -o hostreceiverforjeelink -Wall -Wno-pointer-sign -O2 -DBRAINDEADOS hostreceiverforjeelink.c
 
 fuses:
-	@echo "The fuses should be set for a BODlevel of 2.7 volts."
-	@echo "something along the lines of:"
+	@echo "If you want to be safe, the fuses should be set for a BODlevel"
+	@echo "of 2.7 volts. Something along the lines of:"
 	@echo "  avrdude ... -U hfuse:w:0xdd:m"
+	@echo "However, that uses up 0,03 mA of power, in other words, it almost"
+	@echo "doubles the power consumption. To disable BODlevel, set hfuse"
+	@echo "to 0xdf instead, but be warned that the longterm stability of that"
+	@echo "is untested/unknown."
 
 upload: uploadflash
 
