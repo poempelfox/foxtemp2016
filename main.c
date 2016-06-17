@@ -180,11 +180,7 @@ int main(void)
       adc_power(0);
       /* we use a 1 M / 10 MOhm voltage divider, thus the voltage we see on
        * the ADC is 10/11 of the real voltage. */
-      if (adcval >= 927) { /* prevent overflow */
-        batvolt = 0xff;
-      } else {
-        batvolt = ((adcval * 11) / 10) >> 2;
-      }
+      batvolt = adcval >> 2;
       prepareframe();
       swserialo_printpgm_P(PSTR(" TX "));
       rfm12_sendarray(frametosend, 10);
