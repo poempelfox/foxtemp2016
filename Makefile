@@ -77,7 +77,7 @@ fuses:
 	@echo "to 0xdf instead, but be warned that the longterm stability of that"
 	@echo "is untested/unknown."
 
-upload: uploadflash
+upload: uploadflash uploadeeprom
 
 uploadflash:
 	$(AVRDUDE) -c stk500v2 -p $(AVRDMCU) -P /dev/ttyUSB0 -U flash:w:$(PROG).hex
