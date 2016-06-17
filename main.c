@@ -117,7 +117,7 @@ int main(void)
   CLKPR = _BV(CLKPS1) | _BV(CLKPS0);
   
   swserialo_init();
-  swserialo_printpgm_P(PSTR("FoxtTempDevice 2016.\r\n"));
+  swserialo_printpgm_P(PSTR("FoxTempDevice 2016.\r\n"));
   
   rfm12_initport();
   adc_init();
