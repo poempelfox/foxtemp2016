@@ -217,7 +217,7 @@ sub Foxtemp2016viaJeelink_Parse($$) {
   }
 
   if ($batvolt > 0.0) {
-    readingsBulkUpdate($rhash, "batvolt", $batvolt);
+    readingsBulkUpdate($rhash, "batteryLevel", $batvolt);
   }
 
   readingsEndUpdate($rhash,1);
