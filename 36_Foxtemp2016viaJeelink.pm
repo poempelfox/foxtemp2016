@@ -162,10 +162,10 @@ sub Foxtemp2016viaJeelink_Parse($$) {
 
     $addr = sprintf( "%02x", $bytes[0] );
     $tempraw = ($bytes[2] << 8) | $bytes[3];
-    $temperature =  -45.00 + 175.0 *($tempraw / 65535.0);
+    $temperature = sprintf("%.2f", (-45.00 + 175.0 *($tempraw / 65535.0)));
     $humraw = ($bytes[4] << 8) | $bytes[5];
-    $humidity = 100.0 * ($humraw / 65535.0);
-    $batvolt = 3.3 * $bytes[6] / 255.0;
+    $humidity = sprintf("%.2f", (100.0 * ($humraw / 65535.0)));
+    $batvolt = sprintf("%.2f", (3.3 * $bytes[6] / 255.0_));
   } else {
     DoTrigger($name, "UNKNOWNCODE $msg");
     return "";
