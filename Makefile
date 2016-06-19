@@ -71,10 +71,10 @@ hostreceiverforjeelink: hostreceiverforjeelink.c
 fuses:
 	@echo "If you want to be safe, the fuses should be set for a BODlevel"
 	@echo "of 2.7 volts. Something along the lines of:"
-	@echo "  avrdude ... -U hfuse:w:0xdd:m"
+	@echo "  avrdude ... -U hfuse:w:0xd5:m"
 	@echo "However, that uses up 0,03 mA of power, in other words, it almost"
 	@echo "doubles the power consumption. To disable BODlevel, set hfuse"
-	@echo "to 0xdf instead, but be warned that the longterm stability of that"
+	@echo "to 0xd7 instead, but be warned that the longterm stability of that"
 	@echo "is untested/unknown."
 
 upload: uploadflash uploadeeprom
