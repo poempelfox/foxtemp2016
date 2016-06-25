@@ -240,8 +240,9 @@ sub Foxtemp2016viaJeelink_Parse($$) {
 
   It can be integrated into FHEM via a <a href="#JeeLink">JeeLink</a> as the IODevice.<br><br>
 
-  On the JeeNode, you'll need to run a slightly modified version of the firmware
-  for reading LaCrosse (../contrib/36_LaCrosse-LaCrosseITPlusReader.zip):
+  On the JeeLink, you'll need to run a slightly modified version of the firmware
+  for reading LaCrosse (found in the FHEM repository as
+  /contrib/36_LaCrosse-LaCrosseITPlusReader.zip):
   It has support for a sensor type called "CustomSensor", but that is usually
   not compiled in. There is a line<br>
    <code>CustomSensor::AnalyzeFrame(payload);</code><br>
@@ -258,7 +259,7 @@ sub Foxtemp2016viaJeelink_Parse($$) {
   <ul>
     <code>define &lt;name&gt; Foxtemp2016viaJeelink &lt;addr&gt;</code> <br>
     <br>
-    addr is the ID of the sensor, either in decimal oder (prefixed with 0x) in hexadecimal notation.<br>
+    addr is the ID of the sensor, either in decimal or (prefixed with 0x) in hexadecimal notation.<br>
   </ul>
   <br>
 
