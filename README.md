@@ -14,7 +14,7 @@ the following changes:
 
 Note that you will also need a way to receive the wirelessly transmitted
 data. I simply used a [JeeLink](http://jeelabs.net/projects/hardware/wiki/JeeLink) v3c,
-which is a simple USB transceiver for 833 MHz that is commonly used in
+which is a simple USB transceiver for 868 MHz that is commonly used in
 non-commercial home-automation systems. As such it is well supported by
 FHEM, a popular non-commercial and cloud-free home-automation software.
 A FHEM module for feeding temperature data from foxtemp2016 devices into
@@ -31,8 +31,18 @@ This has been designed for low power applications, and when not transmitting
 uses only a fraction of a miliampere (around 0.06 mA at 2 volts input voltage,
 this depends on the input voltage obviously).
 
+## Case
+
 A reference design for a case that will fit the sensor construction and the
-batteries is also included.
+batteries is also included. You can find the DXF file in the subdirectory
+`case`. It's based on a
+[DIY-lasercut-case-design for a Raspberry Pi B](https://github.com/diy-electronics/raspberrypi-b-plus-case/)
+which in turn seems to be based on some [Adafruit](http://www.adafruit.com)
+case. I merely shrunk the case and added holes so that the sensor can actually get
+air from the room.
+
+The license for the case is CC-BY-SA (due to the fact that the case
+design I modified was also CC-BY-SA).
 
 ## Firmware
 
@@ -51,4 +61,48 @@ is). The idea behind this that if two devices start up at exactly the
 same time, after a few minutes the time at which they transmit data
 will spread out.
 
+Each sensor needs to be given a unique ID of 8 bits. This is stored
+in the EEPROM. If you set the ID in eeprom.c and recompile, you can
+then flash the EEPROM from `foxtemp2016_eeprom.bin`/`.hex`. The
+Makefile target uploadeeprom can serve as an example for how to do
+this with a STK500. If the firmware does not find a configured ID
+in the EEPROM, it will default to an ID of **3**.
+
+## Software
+
+The FHEM module can be found in the file `36_Foxtemp2016viaJeelink.pm`.
+I'm not really proud of this one, it's a mess. Because there seems
+to be no usable documentation on writing proper FHEM modules, I did
+what everybody else seems to do: Copy an existing module and modify
+it by trial and error until it somehow works.
+There are usage instructions at the top of that file, I'll repeat
+them here:
+
+The module is for use together with a JeeLlink as a receiver.
+On the JeeLink, you'll need to run a slightly modified version of the firmware
+for reading LaCrosse (found in the FHEM repository as
+`/contrib/36_LaCrosse-LaCrosseITPlusReader.zip`):
+It has support for a sensor type called "CustomSensor", but that is usually
+not compiled in. There is a line
+
+   `CustomSensor::AnalyzeFrame(payload);`
+
+commented out in `LaCrosseITPlusReader10.ino` -
+you need to remove the `////` to enable it, then recompile the firmware
+and flash it onto the JeeLink.
+
+You need to put this into `/opt/fhem/FHEM/` and to make it work, you'll
+also need to modify `36_JeeLink.pm`: to the string "clientsJeeLink" append
+`:Foxtemp2016viaJeelink`.
+
+Finally, to define a FoxTemp2016-sensor in FHEM, the command is
+
+ `define <name> Foxtemp2016viaJeelink <addr>`
+
+e.g.
+
+ `define kitchen FoxTemp2016viaJeelink 6`
+
+where addr is the ID of the sensor, either in decimal or
+(prefixed with 0x) in hexadecimal notation.
 
