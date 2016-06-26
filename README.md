@@ -20,6 +20,9 @@ FHEM, a popular non-commercial and cloud-free home-automation software.
 A FHEM module for feeding temperature data from foxtemp2016 devices into
 FHEM can also be found in this repository.
 
+![a fully assembled foxtemp2016 device in its case](pics/foxtemp2.jpg)
+![the core of a foxtemp2016 device](pics/foxtemp1.jpg)  
+
 ## Hardware
 
 ### Intro
@@ -45,11 +48,18 @@ together. The bill of materials therefore is short:
   board serves perfectly as what would be called a "shield" in the Arduino
   world: It's plugged/stacked on top of the microcontroller board.
 * a voltage divider for measuring the current voltage of the batteries, so you
-  can tell how full they are.
+  can tell how full they are. You cannot directly connect the batteries
+  to an ADC pin of the microcontroller, because that runs at 3.0 volts,
+  and two AA batteries when full are more like 3.2 volts. Of course, when
+  you modify the design to use a power source that is guaranteed to have
+  less than 3.0 volts at all times, you can skip that voltage divider and
+  just connect power to PA2. You'll also have to make changes on the
+  receiver software side, because that expects the values received to
+  be on a scale of 0 to 3.3 volts, not 0 to 3.0 volts.
   * resistor 10 MOhm
   * resistor 1 MOhm
   * small capacitor. Everything >= 1 nF should be just fine, I used 100 nF
-     because I had that lying around.
+    because I had that lying around.
 * Goobay 78467 battery tray. This is simply a battery holder for two
   AA batteries that has cables attached.
 * an additional 100 uF capacitor for stabilizing power, simply soldered
@@ -65,6 +75,9 @@ together. The bill of materials therefore is short:
 FIXME
 
 ## Case
+
+![the lasercut parts for one case](pics/case1.jpg)  
+![case almost fully assembled with the foxtemp2016 device and batteries inside](pics/case2.jpg)
 
 A reference design for a laser-cut case that will fit the sensor construction
 and the batteries is also included. You can find the DXF file in the subdirectory
