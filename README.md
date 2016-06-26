@@ -46,10 +46,10 @@ together. The bill of materials therefore is short:
   world: It's plugged/stacked on top of the microcontroller board.
 * a voltage divider for measuring the current voltage of the batteries, so you
   can tell how full they are.
-** resistor 10 MOhm
-** resistor 1 MOhm
-** small capacitor. Everything >= 1 nF should be just fine, I used 100 nF
-   because I had that lying around.
+  * resistor 10 MOhm
+  * resistor 1 MOhm
+  * small capacitor. Everything >= 1 nF should be just fine, I used 100 nF
+     because I had that lying around.
 * Goobay 78467 battery tray. This is simply a battery holder for two
   AA batteries that has cables attached.
 * an additional 100 uF capacitor for stabilizing power, simply soldered
