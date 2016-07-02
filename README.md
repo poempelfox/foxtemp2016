@@ -20,8 +20,8 @@ FHEM, a popular non-commercial and cloud-free home-automation software.
 A FHEM module for feeding temperature data from foxtemp2016 devices into
 FHEM can also be found in this repository.
 
-![a fully assembled foxtemp2016 device in its case](pics/foxtemp2.jpg)
-![the core of a foxtemp2016 device](pics/foxtemp1.jpg)  
+<img src="pics/foxtemp2.jpg" alt="a fully assembled foxtemp2016 device in its case" width="250">
+<img src="pics/foxtemp1.jpg" alt="the core of a foxtemp2016 device" width="250">
 
 ## Hardware
 
@@ -76,8 +76,8 @@ FIXME
 
 ## Case
 
-![the lasercut parts for one case](pics/case1.jpg)  
-![case almost fully assembled with the foxtemp2016 device and batteries inside](pics/case2.jpg)
+<img src="pics/case1.jpg" alt="the lasercut parts for one case" width="250">
+<img src="pics/case2.jpg" alt="case almost fully assembled with the foxtemp2016 device and batteries inside" width="250">
 
 A reference design for a laser-cut case that will fit the sensor construction
 and the batteries is also included. You can find the DXF file in the subdirectory
