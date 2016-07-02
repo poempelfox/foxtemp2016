@@ -107,16 +107,26 @@ will actually trigger a full device reset.
 The device will transmit information every 24 or 32 seconds. It tries
 to randomize that interval by using the lowest bit of the
 Analog-Digital-Converter data as a random value (which it pretty much
-is). The idea behind this that if two devices start up at exactly the
+is). The idea behind this is that if two devices start up at exactly the
 same time, after a few minutes the time at which they transmit data
 will spread out.
 
-Each sensor needs to be given a unique ID of 8 bits. This is stored
+Since the SHT31 does need a little time to do the measurement,
+the firmware uses a little trick to maximize the time the microcontroller
+can spend in sleep: Instead of waiting for the SHT31 to complete
+measurement, the firmware tells it to do the measurement just before
+going to deep sleep, and then reads the result when waking up 24 or 32
+seconds later. As a result, the values transmitted are actually values
+as measured half a minute ago, so this is not suitable for anything
+where you need a fast response time.
+
+Each foxtemp2016-device needs to be given a unique ID of 8 bits. This is stored
 in the EEPROM. If you set the ID in eeprom.c and recompile, you can
 then flash the EEPROM from `foxtemp2016_eeprom.bin`/`.hex`. The
 Makefile target uploadeeprom can serve as an example for how to do
 this with a STK500. If the firmware does not find a configured ID
-in the EEPROM, it will default to an ID of **3**.
+in the EEPROM, it will default to an ID of **3**, so you should never
+use that ID.
 
 ## Software
 
