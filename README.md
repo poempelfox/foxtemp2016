@@ -170,6 +170,22 @@ this with a STK500. If the firmware does not find a configured ID
 in the EEPROM, it will default to an ID of **3**, so you should never
 use that ID.
 
+The data format transmitted is based on the one found in the FHEM JeeLink
+firmware as the format for custom sensors, it looks as follows:
+
+| Offset (Byte) | Content  |
+| ------------: | :------- |
+|             0 | 0xCC     |
+|             1 | Sensor-ID (0 to 255 / 0xff)   |
+|             2 | Number of data bytes that follow (6) |
+|             3 | Sensor Type, 0xf7 for FoxTemp2016 |
+|             4 | Temperature MSB (raw value from SHT31) |
+|             5 | Temperature LSB (raw value from SHT31) |
+|             6 | Humidity MSB (raw value from SHT31) |
+|             7 | Humidity LSB (raw value from SHT31) |
+|             8 | Battery voltage (with the 10:1 voltage divider, this is on a scale from 0 = 0V to 0xff = 3.3V  |
+|             9 | Checksum |
+
 ## Software
 
 The FHEM module can be found in the file `36_Foxtemp2016viaJeelink.pm`.
