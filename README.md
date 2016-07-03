@@ -69,10 +69,52 @@ together. The bill of materials therefore is short:
   crashing during transmission (when the radio module suddenly starts drawing
   a lot of power) when connected through a cheap multimeter (for measuring the
   current drawn) in a different project.
+* 4pin angled pin strip for the ISP connector of the JeeNode micro
+* 3pin (non-angled) pin strips male and female for connecting and mounting the
+  SHT31 on top of the JeeNode micro.
 
 ### Putting it together
 
-FIXME
+Wanting to keep things as simple and compact as possible, I soldered the few
+parts directly together on top of the JeeNode micro (JNu). In the following
+description, "top" means the side of the JNu with the radio module, the
+microcontroller and the pushbutton, even if this is the side that will be
+facing downwards later.
+
+I used this sequence:
+* solder the 4pin angled pin strip for the ISP connector (the
+  MOSI/MISO/SCK/RESET-pins on the side opposite the radio module) to the
+  JNu so the pins are on the top side of the JeeNode and face outwards.
+* solder the battery tray cables to the 'P' (power) and 'G' (GND) pads next to
+  the radio module on the JNu.
+* solder the additional 100 uF capacitor between the solder points where you
+  just soldered the battery tray cables, on the bottom of the JNu.
+* solder the short antenna cable (included with the JNu) to the 'ANT' pad
+  on the JNu.
+* solder the voltage divider directly between the pins on the JNu, on
+  the bottom. It goes between the the GND pad in the middle of the board,
+  and the PWR and PA2 pads on the side. The schematic is simply as follows:
+
+```
+    PWR -----|
+             |
+           R 1 MOhm
+             |
+    PA2 -----|----------|
+             |          |
+          R 10 MOhm   C >= 1nF
+             |          |
+    GND -----|----------|
+```
+
+* connect the SHT31. Sadly, only 3 out of 4 pins on the SHT31 breakout board
+  match our layout on the JNu. Therefore, you can use a 3x pin strip male and
+  female to connect the SHT31-breakout-boards VIN, GND, SCL to '+3V', 'GND',
+  PA0/DIO. I put the female header on the bottom of the JNu, and the male
+  header on the bottom of the SHT31, so that when all is put together, the JNu
+  lies top down, and the SHT31 is facing upwards.    
+  For the fourth pin, just use a short wire. Connect 'SDA' on the breakout
+  board to PA1/AIO on the JNu.
 
 ## Case
 
