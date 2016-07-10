@@ -27,9 +27,16 @@ FHEM can also be found in this repository.
 
 ### Intro
 
-This has been designed for low power applications, and when not transmitting
+This has been designed for low power usage, and when not transmitting the circuitry
 uses only a fraction of a miliampere (around 0.06 mA at 2 volts input voltage,
-this depends on the input voltage obviously).
+this depends on the input voltage obviously). This should guarantee a long
+battery life, but it's still unknown how long this will be, it hasn't been
+tested yet. However, at the time of writing this, I have been running one of
+these devices for over a month, with batteries that came used out of another
+(commercial) radio temperature sensor, because they were too empty for that
+one to continue to work. So far, there has been no measurable voltage drop
+on those used batteries (2x AA), they're still at the 2.2V they started
+with.
 
 ### BOM
 
@@ -61,7 +68,7 @@ together. The bill of materials therefore is short:
   * small capacitor. Everything >= 1 nF should be just fine, I used 100 nF
     because I had that lying around.
 * Goobay 78467 battery tray. This is simply a battery holder for two
-  AA batteries that has cables attached.
+  AA / mignon batteries that has cables attached.
 * an additional 100 uF capacitor for stabilizing power, simply soldered
   between the power pin and ground. This is completely
   optional. I added it because IMHO the capacitors on the JeeNode Micro
@@ -183,8 +190,20 @@ firmware as the format for custom sensors, it looks as follows:
 |             5 | Temperature LSB (raw value from SHT31) |
 |             6 | Humidity MSB (raw value from SHT31) |
 |             7 | Humidity LSB (raw value from SHT31) |
-|             8 | Battery voltage (with the 10:1 voltage divider, this is on a scale from 0 = 0V to 0xff = 3.3V  |
+|             8 | Battery voltage (with the 10:1 voltage divider, this is on a scale from 0 = 0V to 0xff = 3.3V)  |
 |             9 | Checksum |
+
+The firmware is not in any way dependant on Arduino libraries
+or tools, you just need avrlibc and avr-gcc.
+
+Flashing the firmware onto the JNu is a bit tricky: it doesn't
+have a bootloader (or a serial port you could talk to). You
+will have to use an ISP programmer that supports a voltage of
+3.0 volts, because that is what the microcontroller on the JNu
+runs at. Due to space constraints, there also isn't a standard
+6 pin ISP connector on it, just the 4 data pins are brought
+out and you'll have to use power and ground pins elsewhere.
+There is [some information about this upstream](http://jeelabs.org/2013/03/03/programming-the-jnu-v3-part-1/).
 
 ## Software
 
