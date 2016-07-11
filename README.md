@@ -9,8 +9,12 @@ This is basically a wireless successor to
 [my old ds1820tosub-project](https://www.poempelfox.de/ds1820tousb/), with
 the following changes:
 - Now wireless. Sadly, that means it needs to be powered by batteries
-- uses a SHT31 as a sensor, not a DS1820.
-- can also measure humidity
+- uses a SHT31 as a sensor, not a DS1820. As a result of this, it
+  can now also measure humidity - the datasheet of the SHT31 claims
+  it can do this at a typical accuracy of &plusmn;2% RH in the relevant
+  ranges. It also claims a typical accuracy of &plusmn;0.3&deg;C for
+  the temperature measurement, so the accuracy is better than the
+  &plusmn;0.5&deg;C the DS1820 promises.
 
 Note that you will also need a way to receive the wirelessly transmitted
 data. I simply used a [JeeLink](http://jeelabs.net/projects/hardware/wiki/JeeLink) v3c,
@@ -44,10 +48,12 @@ The hardware uses as many "ready made" parts as possible and just slaps them
 together. The bill of materials therefore is short:
 
 * [JeeNode micro v3](http://jeelabs.org/jm3), which is
-  an ATtiny84 based microcontroller module with an RFM12B 868 MHz wireless module.
-  The board also includes a boost converter, which means it can be powered by
-  anything from 1.0 to 5.0 volts and will generate the 3.0 volts the
-  microcontroller and peripherals use from that.
+  an ATtiny84 based microcontroller module with an RFM12B 868 MHz
+  wireless module. There are multiple versions of that, the one used
+  here is the one with boost power, it includes a boost converter,
+  which means it can be powered by anything from 1.0 to 5.0 volts
+  and will generate the 3.0 volts the microcontroller and peripherals
+  use from that.
 * SHT31 temperature sensor, in the form of a
   [SHT31 breakout board by Adafruit](https://www.adafruit.com/product/2857).
   This is used because the SHT31 is very tiny, so soldering it directly
@@ -139,6 +145,9 @@ air from the room.
 The dimensions of the case are about 68x66x30 mm and it is intended to be
 cut from 3 mm thick acryl. The case can be assembled without any glueing,
 the parts click together.
+
+The case is not in any way suitable for outside use, it does not offer
+any protection against water or dirt.
 
 The license for the case is CC-BY-SA (due to the fact that the case
 design I modified was also CC-BY-SA).
@@ -236,4 +245,6 @@ e.g.
   `define kitchen FoxTemp2016viaJeelink 6`  
 where addr is the ID of the sensor, either in decimal or
 (prefixed with 0x) in hexadecimal notation.
+
+<img src="pics/foxtempinfhem1.png" alt="many foxtemp2016 devices showing in a FHEM dashboard" width="500">
 
