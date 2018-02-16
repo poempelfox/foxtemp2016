@@ -400,23 +400,9 @@ int main(int argc, char ** argv)
     fprintf(stderr, "ERROR: Could not open serial port %s (%s).\n", serialport, strerror(errno));
     exit(1);
   }
-  {
-    /* configure serial port parameters */
-    struct termios tio;
-    /*char jlinitstr[] = "1r 0a ?"; /* FIXME? 0a 30t instead? */
-    char jlinitstr[] = "1r 0a 30t ?";
-    tcgetattr(serialfd, &tio);
-    cfsetspeed(&tio, B57600);
-    tio.c_lflag &= ~(ICANON | ECHO); /* Clear ICANON and ECHO. */
-    tio.c_iflag &= ~(IXON | IGNBRK); /* no flow control */
-    tio.c_cflag &= ~(CSTOPB); /* just one stop bit */
-    tcsetattr(serialfd, TCSAFLUSH, &tio);
-    /* Now give the jlink some time to reboot, then send the init string */
-    sleep(2);
-    write(serialfd, jlinitstr, sizeof(jlinitstr));
-  }
   if (strcmp(argv[curarg], "daemon") == 0) { /* Daemon mode */
     struct daemondata * mydaemondata = NULL;
+    int havefastsensors = 0;
     curarg++;
     do {
       int l; int optval;
@@ -443,12 +429,14 @@ int main(int argc, char ** argv)
         mydaemondata->sensorid = strtoul(sensorid, NULL, 0);
       } else { /* type+ID - this needs to be a known type */
         switch (sensorid[0]) {
+        case 'L':
+        case 'l': /* these often use the faster data rate */
+                  havefastsensors = 1;
+                  /* no break here, fall through! */
         case 'H':
         case 'h':
         case 'F':
         case 'f':
-        case 'L':
-        case 'l':
                   mydaemondata->sensortype = toupper(sensorid[0]);
                   break;
         default:
@@ -491,6 +479,25 @@ int main(int argc, char ** argv)
     if (mydaemondata == NULL) {
       fprintf(stderr, "ERROR: the daemon command requires parameters.\n");
       exit(1);
+    }
+    {
+      /* configure serial port parameters */
+      struct termios tio;
+      char * jlinitstr;
+      if (havefastsensors) { /* do we have at least 1 sensor using the faster rate of 17241? */
+        jlinitstr = "0a 30t ?"; /* Set to automatically switch data rate every 30 seconds */
+      } else {
+        jlinitstr = "1r 0a ?"; /* Fixed slow rate of 9579 */
+      }
+      tcgetattr(serialfd, &tio);
+      cfsetspeed(&tio, B57600);
+      tio.c_lflag &= ~(ICANON | ECHO); /* Clear ICANON and ECHO. */
+      tio.c_iflag &= ~(IXON | IGNBRK); /* no flow control */
+      tio.c_cflag &= ~(CSTOPB); /* just one stop bit */
+      tcsetattr(serialfd, TCSAFLUSH, &tio);
+      /* Now give the jlink some time to reboot, then send the init string */
+      sleep(2);
+      write(serialfd, jlinitstr, strlen(jlinitstr));
     }
     /* the good old doublefork trick from 'systemprogrammierung 1' */
     if (runinforeground != 1) {
