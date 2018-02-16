@@ -1,12 +1,14 @@
 /* $Id: hostreceiverforjeelink.c $
  * This is software for serving the data received from a HaWo tempdevice 2016
- * to the network. Data is received through a JeeLink that you will need to
- * attach to some USB port. The JeeLink will need to run the firmware for
+ * or a Foxtemp2016 device or some commercial temperature sensors using a
+ * variant of the LaCrosse protocol to the network.
+ * Data is received through a JeeLink that you will need to attach to some
+ * USB port. The JeeLink will need to run the firmware for
  * FHEM, recompiled to support 'custom sensors' (the binary you usually
  * download does not have that compiled in).
  * This is basically a recycled hostsoftware.c from the ds1820tousb project,
  * which was in turn based on an example included in the reference
- * implementation of avrusb, although not much of that should remain.
+ * implementation of avrusb, although close to nothing of that should remain.
  */
 
 #include <stdio.h>
@@ -34,6 +36,7 @@ unsigned char * serialport = "/dev/ttyUSB2";
 int restartonerror = 0;
 
 struct daemondata {
+  unsigned char sensortype;
   unsigned char sensorid;
   unsigned int port;
   int fd;
@@ -55,13 +58,18 @@ static void usage(char *name)
   printf(" -h     show this help\n");
   printf("Valid commands are:\n");
   printf(" daemon   Daemonize and answer queries. This requires one or more\n");
-  printf("          parameters in the format 'sensorid:port', where sensorid is the sensor-id\n");
-  printf("          number of a sensor, and port is a TCP port where the data from this\n");
-  printf("          sensor is to be served, e.g.: 42:31337\n");
-  printf("          optionally, you can give a third parameter, that specifies how the\n");
-  printf("          output to the network should look like, e.g.: 42:31337:%%T\n");
+  printf("          parameters in the format\n");
+  printf("           [sensortype]sensorid:port[:outputformat]\n");
+  printf("          where sensorid is the sensor-id-number of a sensor;\n");
+  printf("          sensortype is one of: H for a hawotempdev2016 (this is also\n");
+  printf("          the default if you omit the type), F for a foxtempdev2016, L for some\n");
+  printf("          commercial sensors using the LaCrosse protocol;\n");
+  printf("          port is a TCP port where the data from this sensor is to be served\n");
+  printf("          The optional outputformat specifies how the\n");
+  printf("          output to the network should look like.\n");
   printf("          Available are: %%S = sensorid, %%T = temperature, %%H = humidity,\n");
   printf("          %%L = last seen timestamp. The default is '%%S %%T'.\n");
+  printf("          Examples: 'H42:31337'   'F23:7777:%%T %%H'\n");
 }
 
 
@@ -200,28 +208,56 @@ static void dotryrestart(struct daemondata * dd, char ** argv) {
 
 #define LLSIZE 1000
 static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
-  unsigned char isok[2][LLSIZE];
+  unsigned char isok[LLSIZE];
+  unsigned char rtype[LLSIZE];
   unsigned int sid;
-  unsigned int parsed[6];
+  unsigned char stype = 0;
+  unsigned int parsed[7];
   int ret;
   struct daemondata * curdd;
   double newtemp, newhum, newvolt;
   
-  /* OK CC 7 23 144 34 53 133 */
-  ret = sscanf(lastline, "%s %s %u %u %u %u %u %u %u",
-                         &isok[0][0], &isok[1][0], &sid, &parsed[0], &parsed[1], &parsed[2],
-                         &parsed[3], &parsed[4], &parsed[5]);
-  if (ret != 8) return;
-  if (strcmp(isok[0], "OK")) return;
-  if (strcmp(isok[1], "CC")) return;
-  newtemp = ((165.0 / 16383.0) * (double)((parsed[0] << 8) | parsed[1])) - 40.0;
-  newhum = (100.0 / 16383.0) * (double)((parsed[2] << 8) | parsed[3]);
-  newvolt = 3.0 * (parsed[4] / 255.0);
-  VERBPRINT(1, "Received data from sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
-               sid, newtemp, newhum, newvolt);
+  /* OK CC 7 23 144 34 53 133         hawotempdev2016 length=8 */
+  /* OK CC 8 247 98 194 159 169 198   foxtempdev2016  length=9 */
+  /* OK 9 9 1 4 194 32                lacrosse        length=7 */
+  ret = sscanf(lastline, "%s %s %u %u %u %u %u %u %u %u",
+                         &isok[0], &rtype[0], &sid, &parsed[0], &parsed[1], &parsed[2],
+                         &parsed[3], &parsed[4], &parsed[5], &parsed[6]);
+  if ((ret != 7) && (ret != 8) && (ret != 9)) return;
+  if (strcmp(isok, "OK")) return;
+  if ((strcmp(rtype, "CC") == 0) && (ret == 8)) { /* hawotempdev2016 */
+    stype = 'H';
+    newtemp = ((165.0 / 16383.0) * (double)((parsed[0] << 8) | parsed[1])) - 40.0;
+    newhum = (100.0 / 16383.0) * (double)((parsed[2] << 8) | parsed[3]);
+    newvolt = 3.0 * (parsed[4] / 255.0);
+    VERBPRINT(1, "Received data from H-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
+                 sid, newtemp, newhum, newvolt);
+  } else if ((strcmp(rtype, "CC") == 0) && (ret == 9)) { /* foxtempdev2016 */
+    if (parsed[0] != 0xf7)  return; /* 'subtype' is not foxtemp (0xf7) */
+    stype = 'F';
+    newtemp = (-45.00 + 175.0 *((double)((parsed[1] << 8) | parsed[2]) / 65535.0));
+    newhum = (100.0 * ((double)((parsed[3] << 8) | parsed[4]) / 65535.0));
+    newvolt = (3.3 * parsed[5]) / 255.0;
+    VERBPRINT(1, "Received data from F-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
+                 sid, newtemp, newhum, newvolt);
+  } else if ((strcmp(rtype, "9") == 0) && (ret == 7)) { /* cheap lacrosse */
+    stype = 'L';
+    newtemp = ((double)((parsed[1] << 8) | parsed[2]) - 1000.0) / 10.0;
+    newhum = (double)(parsed[3] & 0x7f);
+    if ((parsed[3] & 0x80)) { /* There is no real voltage measurement available */
+      newvolt = 1.0;          /* just a weak battery flag. We take a weak */
+    } else {                  /* battery as having 1.0 volt and everything else */
+      newvolt = 2.5;          /* as having 2.5 volt. */
+    }
+    VERBPRINT(1, "Received data from L-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
+                 sid, newtemp, newhum, newvolt);
+  } else {
+    return; /* Not a known/supported sensor */
+  }
   curdd = dd;
   while (curdd != NULL) {
-    if (curdd->sensorid == sid) { /* This sensor ID is requested */
+    if ((curdd->sensortype == stype)
+     && (curdd->sensorid == sid)) { /* This sensor type+ID is requested */
       curdd->lastseen = time(NULL);
       curdd->lasttemp = newtemp;
       curdd->lasthum = newhum;
@@ -367,7 +403,8 @@ int main(int argc, char ** argv)
   {
     /* configure serial port parameters */
     struct termios tio;
-    char jlinitstr[] = "1r 0a ?";
+    /*char jlinitstr[] = "1r 0a ?"; /* FIXME? 0a 30t instead? */
+    char jlinitstr[] = "1r 0a 30t ?";
     tcgetattr(serialfd, &tio);
     cfsetspeed(&tio, B57600);
     tio.c_lflag &= ~(ICANON | ECHO); /* Clear ICANON and ECHO. */
@@ -385,19 +422,40 @@ int main(int argc, char ** argv)
       int l; int optval;
       struct daemondata * newdd;
       struct sockaddr_in6 soa;
+      unsigned char sensorid[1000];
 
       if (curarg >= argc) continue;
       newdd = calloc(sizeof(struct daemondata), 1);
       newdd->next = mydaemondata;
       mydaemondata = newdd;
-      l = sscanf(argv[curarg], "%hhu:%u:%999[^\n]",
-                 &mydaemondata->sensorid, &mydaemondata->port, &mydaemondata->outputformat[0]);
+      l = sscanf(argv[curarg], "%999[^:]:%u:%999[^\n]",
+                 sensorid, &mydaemondata->port, &mydaemondata->outputformat[0]);
       if (l < 2) {
         fprintf(stderr, "ERROR: failed to parse daemon command parameter '%s'\n", argv[curarg]);
         exit(1);
       }
       if (l == 2) {
         strcpy((char *)&mydaemondata->outputformat[0], "%S %T");
+      }
+      if ((sensorid[0] >= (unsigned char)'0') && (sensorid[0] <= (unsigned char)'9')) {
+        /* JUST a number. This is easy. */
+        mydaemondata->sensortype = (unsigned char)'H';
+        mydaemondata->sensorid = strtoul(sensorid, NULL, 0);
+      } else { /* type+ID - this needs to be a known type */
+        switch (sensorid[0]) {
+        case 'H':
+        case 'h':
+        case 'F':
+        case 'f':
+        case 'L':
+        case 'l':
+                  mydaemondata->sensortype = toupper(sensorid[0]);
+                  break;
+        default:
+                  fprintf(stderr, "ERROR: Unknown sensortype selected in daemon parameter '%s'.\n", argv[curarg]);
+                  exit(1);
+        };
+        mydaemondata->sensorid = strtoul(&sensorid[1], NULL, 0);
       }
       /* Open the port */
       mydaemondata->fd = socket(PF_INET6, SOCK_STREAM, 0);
