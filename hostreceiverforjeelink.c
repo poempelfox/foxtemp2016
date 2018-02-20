@@ -72,7 +72,6 @@ static void usage(char *name)
   printf("          Examples: 'H42:31337'   'F23:7777:%%T %%H'\n");
 }
 
-
 void sigpipehandler(int bla) { /* Dummyhandler for catching the event */
   return;
 }
@@ -137,7 +136,7 @@ static void printtooutbuf(char * outbuf, int oblen, struct daemondata * dd) {
       if        (*pos == 'S') { /* SensorID */
         outbuf += sprintf(outbuf, "0x%02x", dd->sensorid);
       } else if ((*pos == 'T') || (*pos == 't')) { /* Temperature */
-        if ((dd->lastseen + 100) < time(NULL)) { /* Stale data / no data yet */
+        if ((dd->lastseen + 180) < time(NULL)) { /* Stale data / no data yet */
           outbuf += sprintf(outbuf, "%s", "N/A");
         } else {
           if (*pos == 'T') { /* fixed width */
@@ -148,7 +147,7 @@ static void printtooutbuf(char * outbuf, int oblen, struct daemondata * dd) {
         }
       } else if ((*pos == 'H') || (*pos == 'h')
               || (*pos == 'F') || (*pos == 'f')) { /* Humidity */
-        if ((dd->lastseen + 100) < time(NULL)) { /* Stale data / no data yet */
+        if ((dd->lastseen + 180) < time(NULL)) { /* Stale data / no data yet */
           outbuf += sprintf(outbuf, "%s", "N/A");
         } else {
           if (*pos == 'H') { /* fixed width, 2 digits after the comma */
@@ -162,7 +161,7 @@ static void printtooutbuf(char * outbuf, int oblen, struct daemondata * dd) {
           }
         }
       } else if ((*pos == 'V') || (*pos == 'v')) { /* Voltage */
-        if ((dd->lastseen + 100) < time(NULL)) { /* Stale data / no data yet */
+        if ((dd->lastseen + 180) < time(NULL)) { /* Stale data / no data yet */
           outbuf += sprintf(outbuf, "%s", "N/A");
         } else {
           outbuf += sprintf(outbuf, "%4.2lf", dd->lastvoltage);
