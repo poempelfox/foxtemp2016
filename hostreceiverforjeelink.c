@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <sys/select.h>  /* According to POSIX.1-2001 */
 #include <termios.h>
+#include <ctype.h>
 
 int verblev = 1;
 #define VERBPRINT(lev, fmt...) \
@@ -191,11 +192,14 @@ static void printtooutbuf(char * outbuf, int oblen, struct daemondata * dd) {
   *outbuf = 0;
 }
 
-static void dotryrestart(struct daemondata * dd, char ** argv) {
+static void dotryrestart(struct daemondata * dd, char ** argv, int serialfd) {
   struct daemondata * curdd = dd;
 
-  if (!restartonerror) { return; }
+  if (!restartonerror) {
+    exit(1);
+  }
   /* close all open sockets */
+  close(serialfd);
   while (curdd != NULL) {
     close(curdd->fd);
     curdd = curdd->next;
@@ -203,6 +207,7 @@ static void dotryrestart(struct daemondata * dd, char ** argv) {
   fprintf(stderr, "Will try to restart in %d second(s)...\n", restartonerror);
   sleep(restartonerror);
   execv(argv[0], argv);
+  exit(1); /* This should never be reached, but just to be sure in case the exec fails... */
 }
 
 #define LLSIZE 1000
@@ -275,7 +280,7 @@ static int processserialdata(int serialfd, struct daemondata * dd, char ** argv)
   ret = read(serialfd, buf, sizeof(buf));
   if (ret < 0) {
     fprintf(stderr, "unexpected ERROR reading serial input: %s\n", strerror(errno));
-    dotryrestart(dd, argv);
+    dotryrestart(dd, argv, serialfd);
   }
   for (i = 0; i < ret; i++) {
     if ((buf[i] == '\n') || (buf[i] == '\r')
@@ -318,8 +323,7 @@ static void dodaemon(int serialfd, struct daemondata * dd, char ** argv) {
     if ((readysocks = select((maxfd + 1), &mylsocks, NULL, NULL, &to)) < 0) { /* Error?! */
       if (errno != EINTR) {
         perror("ERROR: error on select()");
-        dotryrestart(dd, argv);
-        exit(1);
+        dotryrestart(dd, argv, serialfd);
       }
     } else {
       if (FD_ISSET(serialfd, &mylsocks)) {
@@ -351,7 +355,7 @@ static void dodaemon(int serialfd, struct daemondata * dd, char ** argv) {
       /* Did we receive something on the serial port recently? */
       if ((time(NULL) - lastdatarecv) > 300) {
         fprintf(stderr, "%s\n", "Timeout: No data from serial port for 5 minutes.");
-        dotryrestart(dd, argv);
+        dotryrestart(dd, argv, serialfd);
       }
     }
   }
