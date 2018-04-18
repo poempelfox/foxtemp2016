@@ -9,9 +9,10 @@ INCDIR	= .
 # There are a few additional defines that en- or disable certain features,
 # mainly to save space in case you are running out of flash.
 # You can add them here.
-#  -DSWSERIALO      enable software (bitbanging) serial port on PA0 (output only)
-#  -DSWSERBAUD=...  set baudrate for serial port
-ADDDEFS	= #-DSWSERIALO -DSWSERBAUD=9600
+#  -DSWSERIALO        enable software (bitbanging) serial port on PA0 (output only)
+#  -DSWSERBAUD=...    set baudrate for serial port
+#  -DUSERFM69INSTEAD  if you've soldered a RFM69CW instead of the normal RFM12 onto the Jeenode Micro.
+ADDDEFS	= -DUSERFM69INSTEAD #-DSWSERIALO -DSWSERBAUD=9600
 
 # target mcu (atmega 328p)
 MCU	= attiny84
