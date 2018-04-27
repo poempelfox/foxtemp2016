@@ -95,13 +95,9 @@ void rfm12_setsleep(uint8_t s) {
 #else /* Normal RFM12 */
     rfm12_spi16(0x8205);
 #endif /* Normal RFM12 */
-    RFMDDR &= (uint8_t)~_BV(RFMPIN_MOSI);
-    RFMDDR &= (uint8_t)~_BV(RFMPIN_SCK);
     PRR |= _BV(PRUSI);
   } else {
     PRR &= (uint8_t)~_BV(PRUSI);
-    RFMDDR |= _BV(RFMPIN_MOSI);
-    RFMDDR |= _BV(RFMPIN_SCK);
     USICR = _BV(USIWM0);
 #ifdef USERFM69INSTEAD
     rfm69_writereg(0x01, (rfm69_readreg(0x01) & 0xE3) | 0x04);
