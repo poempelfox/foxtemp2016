@@ -26,7 +26,13 @@
 #define RFMPIN_SCK   PA4
 
 #define RFM_FREQUENCY 868300ul
+#ifndef RFM_DATARATE
+#ifdef USERFM69INSTEAD /* RFM69: we default to the higher datarate. */
+#define RFM_DATARATE 17241.0
+#else /* Normal RFM12 */
 #define RFM_DATARATE 9579.0
+#endif /* Normal RFM12 */
+#endif /* RFM_DATARATE not defined externally*/
 
 #define PAYLOADSIZE 64
 

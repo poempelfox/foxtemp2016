@@ -432,14 +432,14 @@ int main(int argc, char ** argv)
         mydaemondata->sensorid = strtoul(sensorid, NULL, 0);
       } else { /* type+ID - this needs to be a known type */
         switch (sensorid[0]) {
+        case 'F':
+        case 'f':
         case 'L':
         case 'l': /* these often use the faster data rate */
                   havefastsensors = 1;
                   /* no break here, fall through! */
         case 'H':
         case 'h':
-        case 'F':
-        case 'f':
                   mydaemondata->sensortype = toupper(sensorid[0]);
                   break;
         default:
