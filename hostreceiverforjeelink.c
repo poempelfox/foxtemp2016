@@ -347,14 +347,14 @@ static void dodaemon(int serialfd, struct daemondata * dd, char ** argv) {
             char outbuf[250];
             printtooutbuf(outbuf, strlen(outbuf), curdd);
             logaccess((struct sockaddr *)&srcad, adrlen, outbuf);
-            /* The write might file if the client already disconnected, but
+            /* The write might fail if the client already disconnected, but
              * there is nothing we can do anyways and the connection is closed
              * immediately afterwards - so remove the gcc -Wunused-result warning.
-             * Note that the gcc devs are braindead assholes that like to force
-             * you to jump through hoops, thus simply casting to void does NOT
-             * work in gcc as it does in almost every other compiler. */
-            int gccdevsareassholes __attribute__((unused));
-            gccdevsareassholes = write(tmpfd, outbuf, strlen(outbuf));
+             * Note that the gcc devs like to force you to jump through hoops,
+             * thus simply casting the result to void is NOT enough to avoid the
+             * warning in gcc. */
+            int gccdevssuck __attribute__((unused));
+            gccdevssuck = write(tmpfd, outbuf, strlen(outbuf));
             close(tmpfd);
           }
         }
@@ -532,7 +532,9 @@ int main(int argc, char ** argv)
       tcsetattr(serialfd, TCSAFLUSH, &tio);
       /* Now give the jlink some time to reboot, then send the init string */
       sleep(2);
-      write(serialfd, jlinitstr, strlen(jlinitstr));
+      if (write(serialfd, jlinitstr, strlen(jlinitstr)) != strlen(jlinitstr)) {
+        fprintf(stderr, "%s\n", "WARNING: init-string was not sent to the Jeelink successfully.");
+      }
     }
     /* the good old doublefork trick from 'systemprogrammierung 1' */
     if (runinforeground != 1) {
