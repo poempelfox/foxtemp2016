@@ -55,6 +55,9 @@ static void usage(char *name)
   printf(" -v     more verbose output. can be repeated numerous times.\n");
   printf(" -q     less verbose output. using this more than once will have no effect.\n");
   printf(" -d p   Port to which the Jeelink is attached (default: %s)\n", serialport);
+  printf(" -r br  Select bitrate mode. -1 makes the JeeLink toggle, 1 or 9579\n");
+  printf("        forces 9579 baud, 2 or 17241 forces 17241. The default 0 picks\n");
+  printf("        a value based on the selected sensors.\n");
   printf(" -f     relevant for daemon mode only: run in foreground.\n");
   printf(" -h     show this help\n");
   printf("Valid commands are:\n");
@@ -344,7 +347,14 @@ static void dodaemon(int serialfd, struct daemondata * dd, char ** argv) {
             char outbuf[250];
             printtooutbuf(outbuf, strlen(outbuf), curdd);
             logaccess((struct sockaddr *)&srcad, adrlen, outbuf);
-            write(tmpfd, outbuf, strlen(outbuf));
+            /* The write might file if the client already disconnected, but
+             * there is nothing we can do anyways and the connection is closed
+             * immediately afterwards - so remove the gcc -Wunused-result warning.
+             * Note that the gcc devs are braindead assholes that like to force
+             * you to jump through hoops, thus simply casting to void does NOT
+             * work in gcc as it does in almost every other compiler. */
+            int gccdevsareassholes __attribute__((unused));
+            gccdevsareassholes = write(tmpfd, outbuf, strlen(outbuf));
             close(tmpfd);
           }
         }
@@ -367,6 +377,7 @@ int main(int argc, char ** argv)
 {
   int curarg;
   int serialfd;
+  int forcebitrate = 0;
 
   for (curarg = 1; curarg < argc; curarg++) {
     if        (strcmp(argv[curarg], "-v") == 0) {
@@ -388,6 +399,15 @@ int main(int argc, char ** argv)
         usage(argv[0]); exit(1);
       }
       serialport = strdup(argv[curarg]);
+    } else if (strcmp(argv[curarg], "-r") == 0) {
+      curarg++;
+      if (curarg >= argc) {
+        fprintf(stderr, "ERROR: -r requires a parameter!\n");
+        usage(argv[0]); exit(1);
+      }
+      forcebitrate = strtol(argv[curarg], NULL, 10);
+      if (forcebitrate == 1) { forcebitrate = 9579; }
+      if (forcebitrate == 2) { forcebitrate = 17241; }
     } else {
       /* Unknown - must be the command. */
       break;
@@ -486,12 +506,24 @@ int main(int argc, char ** argv)
     {
       /* configure serial port parameters */
       struct termios tio;
-      char * jlinitstr;
-      if (havefastsensors) { /* do we have at least 1 sensor using the faster rate of 17241? */
-        jlinitstr = "0a 30t ?"; /* Set to automatically switch data rate every 30 seconds */
+      char jlinitstr[500];
+      strcpy(jlinitstr, "0a "); /* Turn off that annoying ultrabright blue LED */
+      if (forcebitrate == 0) {
+        if (havefastsensors) { /* do we have at least 1 sensor that could use the faster rate of 17241? */
+          strcat(jlinitstr, "30t "); /* Set to automatically switch data rate every 30 seconds */
+        } else {
+          strcat(jlinitstr, "1r "); /* Fixed slow rate of 9579 */
+        }
+      } else if (forcebitrate < 0) {
+        strcat(jlinitstr, "30t "); /* Set to automatically switch data rate every 30 seconds */
+      } else if (forcebitrate == 9579) {
+        strcat(jlinitstr, "1r "); /* Fixed slow rate of 9579 */
+      } else if (forcebitrate == 17241) {
+        strcat(jlinitstr, "0r "); /* Fixed fast rate of 17241 */
       } else {
-        jlinitstr = "1r 0a ?"; /* Fixed slow rate of 9579 */
+        fprintf(stderr, "WARNING: Don't know how to do a bitrate of %d, ignoring bitrate setting!\n", forcebitrate);
       }
+      strcat(jlinitstr, "?");
       tcgetattr(serialfd, &tio);
       cfsetspeed(&tio, B57600);
       tio.c_lflag &= ~(ICANON | ECHO); /* Clear ICANON and ECHO. */
