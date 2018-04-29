@@ -35,6 +35,7 @@ int verblev = 1;
 int runinforeground = 0;
 unsigned char * serialport = "/dev/ttyUSB2";
 int restartonerror = 0;
+time_t datavalidduration = 180;
 
 struct daemondata {
   unsigned char sensortype;
@@ -45,6 +46,11 @@ struct daemondata {
   double lasttemp;
   double lasthum;
   double lastvoltage;
+  double lastpressure;
+  double lastpm2_5;
+  double lastpm10;
+  uint32_t lastcpm1;
+  uint32_t lastcpm60;
   unsigned char outputformat[1000];
   struct daemondata * next;
 };
@@ -67,12 +73,16 @@ static void usage(char *name)
   printf("          where sensorid is the sensor-id-number of a sensor;\n");
   printf("          sensortype is one of: H for a hawotempdev2016 (this is also\n");
   printf("          the default if you omit the type), F for a foxtempdev2016, L for some\n");
-  printf("          commercial sensors using the LaCrosse protocol;\n");
+  printf("          commercial sensors using the LaCrosse protocol, S for a foxstaub2018,\n");
+  printf("          G for a foxgeig2018;\n");
   printf("          port is a TCP port where the data from this sensor is to be served\n");
   printf("          The optional outputformat specifies how the\n");
   printf("          output to the network should look like.\n");
-  printf("          Available are: %%S = sensorid, %%T = temperature, %%H = humidity,\n");
-  printf("          %%L = last seen timestamp. The default is '%%S %%T'.\n");
+  printf("          Available are: %%B = barometric pressure, %%c = CPM 1 min,\n");
+  printf("          %%C = CPM 60 min, %%PM2.5u = PM 2.5u, %%PM10u = PM 10u,\n");
+  printf("          %%H = humidity, %%L = last seen timestamp, %%S = sensorid,\n");
+  printf("          %%T = temperature. The default is '%%S %%T' even for sensors that\n");
+  printf("          don't even measure temperature.\n");
   printf("          Examples: 'H42:31337'   'F23:7777:%%T %%H'\n");
 }
 
@@ -137,21 +147,36 @@ static void printtooutbuf(char * outbuf, int oblen, struct daemondata * dd) {
   while (*pos != 0) {
     if (*pos == '%') {
       pos++;
-      if        (*pos == 'S') { /* SensorID */
-        outbuf += sprintf(outbuf, "0x%02x", dd->sensorid);
-      } else if ((*pos == 'T') || (*pos == 't')) { /* Temperature */
-        if ((dd->lastseen + 180) < time(NULL)) { /* Stale data / no data yet */
+      if (*pos == '%') { /* literal percent sign */
+        *outbuf = '%';
+        outbuf++;
+      } else if ((*pos == 'B') || (*pos == 'b')) { /* barometric pressure */
+        if ((dd->lastseen + datavalidduration) < time(NULL)) { /* Stale data / no data yet */
+          outbuf += sprintf(outbuf, "%s", "N/A");
+        } else if (dd->lastpressure < 1.0) { /* Invalid / no pressure data available */
+          outbuf += sprintf(outbuf, "%s", "N/A");
+        } else if (*pos == 'B') {
+          outbuf += sprintf(outbuf, "%7.3lf", dd->lastpressure);
+        } else { /* 'b' */
+          outbuf += sprintf(outbuf, "%3.0lf", dd->lastpressure);
+        }
+      } else if ((*pos == 'C') || (*pos == 'c')) { /* CPM */
+        if ((dd->lastseen + datavalidduration) < time(NULL)) { /* Stale data / no data yet */
+          outbuf += sprintf(outbuf, "%s", "N/A");
+        } else if ((*pos == 'c') && (dd->lastcpm1 == 0xffffff)) {
+          outbuf += sprintf(outbuf, "%s", "N/A");
+        } else if ((*pos == 'C') && (dd->lastcpm60 == 0xffffff)) {
           outbuf += sprintf(outbuf, "%s", "N/A");
         } else {
-          if (*pos == 'T') { /* fixed width */
-            outbuf += sprintf(outbuf, "%6.2lf", dd->lasttemp);
-          } else { /* variable width. */
-            outbuf += sprintf(outbuf, "%.2lf", dd->lasttemp);
-          }
+          outbuf += sprintf(outbuf, "%lu", (unsigned long)((*pos == 'c')
+                                           ? dd->lastcpm1
+                                           : dd->lastcpm60));
         }
       } else if ((*pos == 'H') || (*pos == 'h')
               || (*pos == 'F') || (*pos == 'f')) { /* Humidity */
-        if ((dd->lastseen + 180) < time(NULL)) { /* Stale data / no data yet */
+        if ((dd->lastseen + datavalidduration) < time(NULL)) { /* Stale data / no data yet */
+          outbuf += sprintf(outbuf, "%s", "N/A");
+        } else if (dd->lasthum == 106.0) { /* Invalid / no humidity sensor available */
           outbuf += sprintf(outbuf, "%s", "N/A");
         } else {
           if (*pos == 'H') { /* fixed width, 2 digits after the comma */
@@ -164,23 +189,42 @@ static void printtooutbuf(char * outbuf, int oblen, struct daemondata * dd) {
             outbuf += sprintf(outbuf, "%.1lf", dd->lasthum);
           }
         }
+      } else if (*pos == 'L') { /* Last seen */
+        outbuf += sprintf(outbuf, "%u", (unsigned int)dd->lastseen);
+      } else if (*pos == 'n') { /* linefeed / Newline */
+        *outbuf = '\n';
+        outbuf++;
+      } else if ((*pos == 'P') || (*pos == 'p')) { /* PM (particulate matter) */
+        if (strncmp(pos + 1, "M2.5u", 5) == 0) {
+          pos = pos + 5;
+          outbuf += sprintf(outbuf, "%.1lf", dd->lastpm2_5);
+        } else if (strncmp(pos + 1, "M10u", 4) == 0) {
+          pos = pos + 4;
+          outbuf += sprintf(outbuf, "%.1lf", dd->lastpm10);
+        } else {
+          /* This is invalid but there isn't much we can do here. */
+        }
+      } else if (*pos == 'r') { /* carriage return */
+        *outbuf = '\r';
+        outbuf++;
+      } else if (*pos == 'S') { /* SensorID */
+        outbuf += sprintf(outbuf, "0x%02x", dd->sensorid);
+      } else if ((*pos == 'T') || (*pos == 't')) { /* Temperature */
+        if ((dd->lastseen + datavalidduration) < time(NULL)) { /* Stale data / no data yet */
+          outbuf += sprintf(outbuf, "%s", "N/A");
+        } else {
+          if (*pos == 'T') { /* fixed width */
+            outbuf += sprintf(outbuf, "%6.2lf", dd->lasttemp);
+          } else { /* variable width. */
+            outbuf += sprintf(outbuf, "%.2lf", dd->lasttemp);
+          }
+        }
       } else if ((*pos == 'V') || (*pos == 'v')) { /* Voltage */
-        if ((dd->lastseen + 180) < time(NULL)) { /* Stale data / no data yet */
+        if ((dd->lastseen + datavalidduration) < time(NULL)) { /* Stale data / no data yet */
           outbuf += sprintf(outbuf, "%s", "N/A");
         } else {
           outbuf += sprintf(outbuf, "%4.2lf", dd->lastvoltage);
         }
-      } else if (*pos == 'L') { /* Last seen */
-        outbuf += sprintf(outbuf, "%u", (unsigned int)dd->lastseen);
-      } else if (*pos == 'r') { /* carriage return */
-        *outbuf = '\r';
-        outbuf++;
-      } else if (*pos == 'n') { /* linefeed / Newline */
-        *outbuf = '\n';
-        outbuf++;
-      } else if (*pos == '%') { /* literal percent sign */
-        *outbuf = '%';
-        outbuf++;
       } else if (*pos == 0) {
         *outbuf = 0;
         return;
@@ -219,18 +263,26 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
   unsigned char rtype[LLSIZE];
   unsigned int sid;
   unsigned char stype = 0;
-  unsigned int parsed[7];
+  unsigned int parsed[14];
   int ret;
   struct daemondata * curdd;
-  double newtemp, newhum, newvolt;
+  double newtemp = -274.0, newvolt = 0.0;
+  double newhum = 106.0; /* LaCrosse sensors use 106 to show they have no
+                          * humidity data, so we just recycle that */
+  double newpress = 0.0, newpm2_5 = -1.0, newpm10 = -1.0;
+  uint32_t newcpm1 = 0xffffff, newcpm60 = 0xffffff;
   
-  /* OK CC 7 23 144 34 53 133         hawotempdev2016 length=8 */
-  /* OK CC 8 247 98 194 159 169 198   foxtempdev2016  length=9 */
-  /* OK 9 9 1 4 194 32                lacrosse        length=7 */
-  ret = sscanf(lastline, "%s %s %u %u %u %u %u %u %u %u",
-                         &isok[0], &rtype[0], &sid, &parsed[0], &parsed[1], &parsed[2],
-                         &parsed[3], &parsed[4], &parsed[5], &parsed[6]);
-  if ((ret != 7) && (ret != 8) && (ret != 9)) return;
+  /* OK CC 7 23 144 34 53 133                         hawotempdev2016 length=8 */
+  /* OK CC 8 247 98 194 159 169 198                   foxtempdev2016  length=9 */
+  /* OK 9 9 1 4 194 32                                lacrosse        length=7 */
+  /* OK CC 7 245 1 126 151 87 51 120 96 97 0 33 0 95  foxstaub2018    length=16 */
+  /* OK CC 2 249 0 0 34 0 0 26 157                    foxgeig2018     length=11 */
+  ret = sscanf(lastline, "%s %s %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u",
+                         &isok[0], &rtype[0], &sid, &parsed[0], &parsed[1],
+                         &parsed[2], &parsed[3], &parsed[4], &parsed[5], &parsed[6],
+                         &parsed[7], &parsed[8], &parsed[9], &parsed[10], &parsed[11],
+                         &parsed[12], &parsed[13]);
+  if ((ret != 7) && (ret != 8) && (ret != 9) && (ret != 11) && (ret != 16)) return;
   if (strcmp(isok, "OK")) return;
   if ((strcmp(rtype, "CC") == 0) && (ret == 8)) { /* hawotempdev2016 */
     stype = 'H';
@@ -242,11 +294,34 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
   } else if ((strcmp(rtype, "CC") == 0) && (ret == 9)) { /* foxtempdev2016 */
     if (parsed[0] != 0xf7)  return; /* 'subtype' is not foxtemp (0xf7) */
     stype = 'F';
-    newtemp = (-45.00 + 175.0 *((double)((parsed[1] << 8) | parsed[2]) / 65535.0));
+    newtemp = (-45.00 + 175.0 * ((double)((parsed[1] << 8) | parsed[2]) / 65535.0));
     newhum = (100.0 * ((double)((parsed[3] << 8) | parsed[4]) / 65535.0));
     newvolt = (3.3 * parsed[5]) / 255.0;
     VERBPRINT(1, "Received data from F-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
                  sid, newtemp, newhum, newvolt);
+  } else if ((strcmp(rtype, "CC") == 0) && (ret == 11)) { /* foxgeig2018 */
+    if (parsed[0] != 0xf9)  return; /* 'subtype' is not foxgeig (0xf9) */
+    stype = 'G';
+    newcpm1 = ((uint32_t)parsed[1] << 16) | ((uint32_t)parsed[2] << 8)
+            | ((uint32_t)parsed[3]);
+    newcpm60 = ((uint32_t)parsed[4] << 16) | ((uint32_t)parsed[5] << 8)
+             | ((uint32_t)parsed[6]);
+    newvolt = 6.6 * (parsed[7] / 255.0);
+    VERBPRINT(1, "Received data from G-sensor %u: cpm1=%lu cpm60=%lu v=%.2lf\n",
+                 sid, (unsigned long)newcpm1, (unsigned long)newcpm60, newvolt);
+  } else if ((strcmp(rtype, "CC") == 0) && (ret == 16)) { /* foxstaub2018 */
+    uint32_t newpraw;
+    if (parsed[0] != 0xf5)  return; /* 'subtype' is not foxstaub (0xf5) */
+    stype = 'S';
+    newpraw = (((uint32_t)parsed[1] << 24) | ((uint32_t)parsed[2] << 16)
+             | ((uint32_t)parsed[3] <<  8) | ((uint32_t)parsed[4] <<  0));
+    newpress = (double)newpraw / 25600.0;
+    newtemp = (((double)((parsed[5] << 8) | parsed[6])) / 100.0) - 100.0;
+    newhum = ((double)((parsed[7] << 8) | parsed[8])) / 1024.0;
+    newpm2_5 = ((double)((parsed[9] << 8) | parsed[10])) / 10.0;
+    newpm10 = ((double)((parsed[11] << 8) | parsed[12])) / 10.0;
+    VERBPRINT(1, "Received data from S-sensor %u: t=%.2lf h=%.2lf p=%.3lf pm2_5=%.1lf pm10=%.1lf\n",
+                 sid, newtemp, newhum, newpress, newpm2_5, newpm10);
   } else if ((strcmp(rtype, "9") == 0) && (ret == 7)) { /* cheap lacrosse */
     stype = 'L';
     newtemp = ((double)((parsed[1] << 8) | parsed[2]) - 1000.0) / 10.0;
@@ -269,6 +344,11 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
       curdd->lasttemp = newtemp;
       curdd->lasthum = newhum;
       curdd->lastvoltage = newvolt;
+      curdd->lastpressure = newpress;
+      curdd->lastpm2_5 = newpm2_5;
+      curdd->lastpm10 = newpm10;
+      curdd->lastcpm1 = newcpm1;
+      curdd->lastcpm60 = newcpm60;
     }
     curdd = curdd->next;
   }
@@ -454,8 +534,12 @@ int main(int argc, char ** argv)
         switch (sensorid[0]) {
         case 'F':
         case 'f':
+        case 'G':
+        case 'g':
         case 'L':
-        case 'l': /* these often use the faster data rate */
+        case 'l':
+        case 'S':
+        case 's': /* these often use the faster data rate */
                   havefastsensors = 1;
                   /* no break here, fall through! */
         case 'H':
