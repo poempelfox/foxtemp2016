@@ -144,8 +144,11 @@ int main(void)
   ACSR |= _BV(ACD);
   /* Disable unneeded digital input registers for ADC pin PA2 (used for voltage
    * measurement) and PA7 (unused/floating). */
-  DIDR0 |= _BV(ADC2D) | _BV(ADC7D);
+  DIDR0 |= _BV(ADC2D);
+#ifndef SWSERIALO
+  DIDR0 |= _BV(ADC7D);
   PORTA |= _BV(PA7);
+#endif /* SWSERIALO */
   /* PB2 is the IRQ line from the RFM12. We don't use it. Make sure that pin
    * is tristated on our side (it won't float, the RFM12B pulls it) */
   PORTB &= (uint8_t)~_BV(PB2);
