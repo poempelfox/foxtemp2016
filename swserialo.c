@@ -27,7 +27,7 @@
 /* Which is the pin that we use? */
 #define SWSDDR DDRA
 #define SWSPORT PORTA
-#define SWSBIT PA3
+#define SWSBIT PA7
 
 #ifdef SWSERIALO
 
