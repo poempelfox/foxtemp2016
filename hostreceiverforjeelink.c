@@ -354,12 +354,17 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
   }
 }
 
-static int processserialdata(int serialfd, struct daemondata * dd, char ** argv) {
+static int processserialdata(int serialfd, struct daemondata * dd, char ** argv, char * jlinitstr) {
   static unsigned char lastline[LLSIZE];
   static unsigned int llpos = 0;
+  static time_t lastsentinit = 0;
   unsigned char buf[100];
   int ret; int i;
 
+  /* Init lastsentinit if not done yet */
+  if (lastsentinit == 0) {
+    lastsentinit = time(NULL);
+  }
   ret = read(serialfd, buf, sizeof(buf));
   if (ret < 0) {
     fprintf(stderr, "unexpected ERROR reading serial input: %s\n", strerror(errno));
@@ -371,7 +376,24 @@ static int processserialdata(int serialfd, struct daemondata * dd, char ** argv)
       if (llpos > 0) {
         lastline[llpos] = 0;
         VERBPRINT(2, "Received on serial: %s\n", lastline);
-        parseserialline(lastline, dd);
+        if (strncmp(lastline, "[LaCrosseITPlusReader", 21) == 0) {
+          /* this is output only received after reset or sending a "?".
+           * If we receive that and we haven't sent our init-string recently,
+           * it means the JeeLink has for some reason reset/rebooted, so we
+           * need to resend our init-string to make sure it receives the right
+           * frequencies/bitrates. */
+          if ((time(NULL) - lastsentinit) > 30) {
+            VERBPRINT(2, "%s\n", "JeeLink probably rebooted, re-sending init-string");
+            if (write(serialfd, jlinitstr, strlen(jlinitstr)) != strlen(jlinitstr)) {
+              fprintf(stderr, "%s\n", "WARNING: init-string was not sent to the Jeelink successfully.");
+            }
+            lastsentinit = time(NULL);
+          } else {
+            VERBPRINT(3, "Not resending init-string (%ld seconds passed since last time)\n", (long)(time(NULL) - lastsentinit));
+          }
+        } else {
+          parseserialline(lastline, dd);
+        }
         llpos = 0;
       }
     } else {
@@ -382,7 +404,7 @@ static int processserialdata(int serialfd, struct daemondata * dd, char ** argv)
   return ret;
 }
 
-static void dodaemon(int serialfd, struct daemondata * dd, char ** argv) {
+static void dodaemon(int serialfd, struct daemondata * dd, char ** argv, char * jlinitstr) {
   fd_set mylsocks;
   struct daemondata * curdd;
   struct timeval to;
@@ -410,7 +432,7 @@ static void dodaemon(int serialfd, struct daemondata * dd, char ** argv) {
       }
     } else {
       if (FD_ISSET(serialfd, &mylsocks)) {
-        if (processserialdata(serialfd, dd, argv) > 0) {
+        if (processserialdata(serialfd, dd, argv, jlinitstr) > 0) {
           lastdatarecv = time(NULL);
         }
       }
@@ -506,6 +528,7 @@ int main(int argc, char ** argv)
   if (strcmp(argv[curarg], "daemon") == 0) { /* Daemon mode */
     struct daemondata * mydaemondata = NULL;
     int havefastsensors = 0;
+    char jlinitstr[500];
     curarg++;
     do {
       int l; int optval;
@@ -590,7 +613,6 @@ int main(int argc, char ** argv)
     {
       /* configure serial port parameters */
       struct termios tio;
-      char jlinitstr[500];
       strcpy(jlinitstr, "0a "); /* Turn off that annoying ultrabright blue LED */
       if (forcebitrate == 0) {
         if (havefastsensors) { /* do we have at least 1 sensor that could use the faster rate of 17241? */
@@ -651,7 +673,7 @@ int main(int argc, char ** argv)
       sia.sa_flags = 0;          /* to die from 'broken pipe'! */
       sigaction(SIGPIPE, &sia, NULL);
     }
-    dodaemon(serialfd, mydaemondata, argv);
+    dodaemon(serialfd, mydaemondata, argv, jlinitstr);
   } else {
     fprintf(stderr, "ERROR: Command '%s' is unknown.\n", argv[curarg]);
     usage(argv[0]);
