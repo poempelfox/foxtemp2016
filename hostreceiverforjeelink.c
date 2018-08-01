@@ -286,7 +286,11 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
   if (strcmp(isok, "OK")) return;
   if ((strcmp(rtype, "CC") == 0) && (ret == 8)) { /* hawotempdev2016 */
     stype = 'H';
-    newtemp = ((165.0 / 16383.0) * (double)((parsed[0] << 8) | parsed[1])) - 40.0;
+    if ((parsed[0] == 0xff) && (parsed[1] == 0xff)) {
+      /* Sensor reported invalid data on the device. */
+    } else {
+      newtemp = ((165.0 / 16383.0) * (double)(((parsed[0] & 0x3f) << 8) | parsed[1])) - 40.0;
+    }
     newhum = (100.0 / 16383.0) * (double)((parsed[2] << 8) | parsed[3]);
     newvolt = 3.0 * (parsed[4] / 255.0);
     VERBPRINT(1, "Received data from H-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
