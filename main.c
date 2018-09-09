@@ -116,6 +116,12 @@ int main(void)
   CLKPR = _BV(CLKPCE);
   CLKPR = _BV(CLKPS1) | _BV(CLKPS0);
   
+  /* Turn off power to RFM12/69 to force a hard reset of that when
+   * we reset from the watchdog timer and not the external RESET line. */
+  DDRB |= _BV(PB0);
+  PORTB |= _BV(PB0);
+  _delay_ms(2000); /* Wait. */
+
   swserialo_init();
   swserialo_printpgm_P(PSTR("FoxTempDevice 2016.\r\n"));
   
@@ -124,7 +130,7 @@ int main(void)
   sht31_init();
   loadsettingsfromeeprom();
   
-  _delay_ms(500); /* The RFM12 needs some time to start up */
+  _delay_ms(1000); /* The RFM12 needs some time to start up */
   
   rfm12_initchip();
   rfm12_setsleep(1);
@@ -161,6 +167,7 @@ int main(void)
 
   uint16_t transmitinterval = 2; /* this is in multiples of the watchdog timer timeout (8S)! */
   uint8_t mlcnt = 0;
+  uint8_t readerrcnt = 0;
   while (1) { /* Main loop, we should never exit it. */
     mlcnt++;
     swserialo_printpgm_P(PSTR("."));
@@ -174,8 +181,19 @@ int main(void)
       temp = 0xffff;
       hum = 0xffff;
       if (hd.valid) {
+        readerrcnt = 0;
         temp = hd.temp;
         hum = hd.hum;
+      } else {
+        readerrcnt++;
+        if (readerrcnt > 5) {
+          /* We could not read the SHT31 5 times in a row?! */
+          /* Then force reset through watchdog timer. */
+          swserialo_printpgm_P(PSTR("TooManyReadErrorsWaitingForWatchdogReset\r\n"));
+          while (1) {
+            sleep_cpu();
+          }
+        }
       }
       sht31_startmeas();
       /* read voltage from ADC */
@@ -185,7 +203,7 @@ int main(void)
        * the ADC is 10/11 of the real voltage. */
       batvolt = adcval >> 2;
       prepareframe();
-      swserialo_printpgm_P(PSTR(" TX "));
+      swserialo_printpgm_P(PSTR("\r\nTX\r\n"));
       rfm12_sendarray(frametosend, 10);
       pktssent++;
       /* Semirandom delay: the lowest bits from the ADC are mostly noise, so
