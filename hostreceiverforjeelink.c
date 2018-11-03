@@ -277,12 +277,13 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
   /* OK 9 9 1 4 194 32                                lacrosse        length=7 */
   /* OK CC 7 245 1 126 151 87 51 120 96 97 0 33 0 95  foxstaub2018    length=16 */
   /* OK CC 2 249 0 0 34 0 0 26 157                    foxgeig2018     length=11 */
+  /* OK CC 7 253 99 175 152 104 230 119 60 62         hawotempdev2018 length=12 */
   ret = sscanf(lastline, "%s %s %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u",
                          &isok[0], &rtype[0], &sid, &parsed[0], &parsed[1],
                          &parsed[2], &parsed[3], &parsed[4], &parsed[5], &parsed[6],
                          &parsed[7], &parsed[8], &parsed[9], &parsed[10], &parsed[11],
                          &parsed[12], &parsed[13]);
-  if ((ret != 7) && (ret != 8) && (ret != 9) && (ret != 11) && (ret != 16)) return;
+  if ((ret != 7) && (ret != 8) && (ret != 9) && (ret != 11) && (ret != 12) && (ret != 16)) return;
   if (strcmp(isok, "OK")) return;
   if ((strcmp(rtype, "CC") == 0) && (ret == 8)) { /* hawotempdev2016 */
     stype = 'H';
@@ -313,6 +314,18 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
     newvolt = 6.6 * (parsed[7] / 255.0);
     VERBPRINT(1, "Received data from G-sensor %u: cpm1=%lu cpm60=%lu v=%.2lf\n",
                  sid, (unsigned long)newcpm1, (unsigned long)newcpm60, newvolt);
+  } else if ((strcmp(rtype, "CC") == 0) && (ret == 12)) { /* hawotempdev2018 / foxtempdev with pressure sensor */
+    uint32_t newpraw;
+    if (parsed[0] != 0xfd)  return; /* 'subtype' is not hawotempdev2018 (0xfd) */
+    stype = 'D';
+    newtemp = (-45.00 + 175.0 * ((double)((parsed[1] << 8) | parsed[2]) / 65535.0));
+    newhum = (100.0 * ((double)((parsed[3] << 8) | parsed[4]) / 65535.0));
+    newvolt = (3.3 * parsed[5]) / 255.0;
+    newpraw = (((uint32_t)parsed[8] << 16) | ((uint32_t)parsed[7] <<  8)
+             | ((uint32_t)parsed[6] <<  0));
+    newpress = (double)newpraw / 4096.0;
+    VERBPRINT(1, "Received data from D-sensor %u: t=%.2lf h=%.2lf v=%.2lf p=%.3lf\n",
+                 sid, newtemp, newhum, newvolt, newpress);
   } else if ((strcmp(rtype, "CC") == 0) && (ret == 16)) { /* foxstaub2018 */
     uint32_t newpraw;
     if (parsed[0] != 0xf5)  return; /* 'subtype' is not foxstaub (0xf5) */
@@ -569,6 +582,8 @@ int main(int argc, char ** argv)
         case 's': /* these often use the faster data rate */
                   havefastsensors = 1;
                   /* no break here, fall through! */
+        case 'D':
+        case 'd':
         case 'H':
         case 'h':
                   mydaemondata->sensortype = toupper(sensorid[0]);
