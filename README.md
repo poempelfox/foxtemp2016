@@ -34,13 +34,10 @@ FHEM can also be found in this repository.
 This has been designed for low power usage, and when not transmitting the circuitry
 uses only a fraction of a miliampere (around 0.06 mA at 2 volts input voltage,
 this depends on the input voltage obviously). This should guarantee a long
-battery life, but it's still unknown how long this will be, it hasn't been
-tested yet. However, at the time of writing this, I have been running one of
-these devices for over a month, with batteries that came used out of another
-(commercial) radio temperature sensor, because they were too empty for that
-one to continue to work. So far, there has been no measurable voltage drop
-on those used batteries (2x AA), they're still at the 2.2V they started
-with.
+battery life, but it's still unknown how long exactly this will be.
+However, at the time of writing this, I have been running a bunch of
+these devices for more than two years with one set of 2x AA batteries, and they
+are currently at 2.7 volts, so probably will be good for some more time.
 
 ### BOM
 
