@@ -150,6 +150,7 @@ void rfm12_sendarray(uint8_t * data, uint8_t length) {
     reg28 = rfm69_readreg(0x28);
     maxreps--;
     if (maxreps == 0) { /* Give up */
+      swserialo_printpgm_P(PSTR("!TXFAIL!"));
       break;
     }
   }
@@ -200,8 +201,17 @@ void rfm12_initchip(void) {
   /* RegFDevMsb / RegFDevLsb -> 0x05C3 (90 kHz). */
   rfm69_writereg(0x05, 0x05);
   rfm69_writereg(0x06, 0xC3);
-  /* RegPaLevel -> Pa0=1 Pa1=0 Pa2=0 Outputpower=31 -> 13 dbM for RFM69CW (would not work on HCW!) */
-  rfm69_writereg(0x11, 0x9F);
+  /* RegPaLevel -> Pa0=1 Pa1=0 Pa2=0 plus...
+   * ...Outputpower=31 -> 13 dbM for RFM69CW: 0x9F
+   * ...Outputpower=24 ->  6 dbM for RFM69CW: 0x98
+   * Note these settings would not work with a RFM69_H_CW!
+   * Sadly, in my experience setting this to 0x9F results in completely
+   * garbled transmissions. I was never able to figure out why and can
+   * only guess the Jeenodes power infrastructure is just not right for
+   * the amount of power this mode consumes. So we default to 6 instead
+   * of 13 dbM, which is still marginally better than the 5 dbM of a RFM12.
+   */
+  rfm69_writereg(0x11, 0x98);
   /* RegOcp -> defaults (jeelink-sketch sets 0 but that seems wrong) */
   rfm69_writereg(0x13, 0x1a);
   /* RegRxBw -> DccFreq 010   Mant 16   Exp 2 - this is a receiver-register,
