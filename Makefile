@@ -12,6 +12,7 @@ INCDIR	= .
 #  -DSWSERIALO        enable software (bitbanging) serial port on PA7 (output only)
 #  -DSWSERBAUD=...    set baudrate for serial port
 #  -DUSERFM69INSTEAD  if you've soldered a RFM69CW instead of the normal RFM12 onto the Jeenode Micro.
+#  -DRFM_DATARATE=9579.0 or 17241.0. This defaults to 17241 for RFM69, 9579 for RFM12.
 ADDDEFS	= #-DUSERFM69INSTEAD -DSWSERIALO -DSWSERBAUD=9600
 
 # target mcu (atmega 328p)
