@@ -35,9 +35,15 @@ This has been designed for low power usage, and when not transmitting the circui
 uses only a fraction of a miliampere (around 0.06 mA at 2 volts input voltage,
 this depends on the input voltage obviously). This should guarantee a long
 battery life, but it's still unknown how long exactly this will be.
-However, at the time of writing this, I have been running a bunch of
+<i>Update November 2018:</i> I have now been running a bunch of
 these devices for more than two years with one set of 2x AA batteries, and they
 are currently at 2.7 volts, so probably will be good for some more time.
+<i>Update January 2022:</i> I have now had to change the batteries in the first device,
+because they did not deliver stable voltages anymore and I feared that they would
+start to leak. So the runtime for this device was about 4.5 years with one set
+of 2x AA batteries. The rest of the devices continue to run, but their battery voltages
+are down to 2.3-2.4 volts by now, so I expect them to also give up within the
+next months.
 
 ### BOM
 
