@@ -348,8 +348,17 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
     } else {                  /* battery as having 1.0 volt and everything else */
       newvolt = 2.5;          /* as having 2.5 volt. */
     }
-    VERBPRINT(1, "Received data from L-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
-                 sid, newtemp, newhum, newvolt);
+    if (newhum == 106) { /* has no humidity sensor */
+      VERBPRINT(1, "Received data from L-sensor %u: t=%.2lf NOHUMSENS%s%s\n",
+                   sid, newtemp,
+                   ((parsed[0] & 0x80) ? " NEWBATT" : ""),
+                   ((parsed[3] & 0x80) ? " WEAKBATT" : ""));
+    } else {
+      VERBPRINT(1, "Received data from L-sensor %u: t=%.2lf h=%.2lf%s%s\n",
+                   sid, newtemp, newhum,
+                   ((parsed[0] & 0x80) ? " NEWBATT" : ""),
+                   ((parsed[3] & 0x80) ? " WEAKBATT" : ""));
+    }
   } else {
     return; /* Not a known/supported sensor */
   }
