@@ -36,6 +36,9 @@ int runinforeground = 0;
 unsigned char * serialport = "/dev/ttyUSB2";
 int restartonerror = 0;
 time_t datavalidduration = 180;
+#define RECTJEELINK 0
+#define RECTCUL 1
+int receivertype = RECTJEELINK;
 
 struct daemondata {
   unsigned char sensortype;
@@ -65,6 +68,7 @@ static void usage(char *name)
   printf("        forces 9579 baud, 2 or 17241 forces 17241. The default 0 picks\n");
   printf("        a value based on the selected sensors.\n");
   printf(" -f     relevant for daemon mode only: run in foreground.\n");
+  printf(" -C     receiver device is not a Jeelink but a CUL, running culfw >= 1.67\n");
   printf(" -h     show this help\n");
   printf("Valid commands are:\n");
   printf(" daemon   Daemonize and answer queries. This requires one or more\n");
@@ -257,8 +261,27 @@ static void dotryrestart(struct daemondata * dd, char ** argv, int serialfd) {
   exit(1); /* This should never be reached, but just to be sure in case the exec fails... */
 }
 
+/* Calculate LaCrosse (compatible) CRC. Taken from LaCrosseITPlusReader. */
+static uint8_t lcccrc(uint8_t * data, int len) {
+  int i, j;
+  uint8_t res = 0;
+  for (j = 0; j < len; j++) {
+    uint8_t val = data[j];
+    for (i = 0; i < 8; i++) {
+      uint8_t tmp = (uint8_t)((res ^ val) & 0x80);
+      res <<= 1;
+      if (0 != tmp) {
+        res ^= 0x31;
+      }
+      val <<= 1;
+    }
+  }
+  return res;
+}
+
 #define LLSIZE 1000
-static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
+static void parseserialline(unsigned char * origlastline, struct daemondata * dd) {
+  unsigned char lastline[LLSIZE];
   unsigned char isok[LLSIZE];
   unsigned char rtype[LLSIZE];
   unsigned int sid;
@@ -272,6 +295,89 @@ static void parseserialline(unsigned char * lastline, struct daemondata * dd) {
   double newpress = 0.0, newpm2_5 = -1.0, newpm10 = -1.0;
   uint32_t newcpm1 = 0xffffff, newcpm60 = 0xffffff;
   
+  strcpy(lastline, origlastline); /* Just so we don't modify the original string */
+  if (receivertype == RECTCUL) {
+    uint8_t rawbytes[LLSIZE];
+    int ppos;
+    /* Instead of implementing all the logic below twice, we convert the
+     * raw format from the CUL into the preprocessed format a Jeelink would
+     * deliver. Waaaaaay less work. */
+    if ((strncmp(&origlastline[0], "N01", 3) != 0)
+     && (strncmp(&origlastline[0], "N02", 3) != 0)) {
+      return; /* Not a string containing a raw packet */
+    }
+    ppos = 0;
+    while (strlen(&origlastline[3 + ppos * 2]) >= 2) {
+      ret = sscanf(&origlastline[3 + ppos * 2], "%02hhx", &rawbytes[ppos]);
+      if (ret != 1) return; /* non-hex stuff - invalid data */
+      ppos++;
+    }
+    if (ppos < 6) return; /* This cannot be valid, it's too short */
+    if (rawbytes[0] == 0xcc) { /* "Custom" sensor */
+      /* Format: SSSSSSSS  IIIIIIII  BBBBBBBB  DDDDDDDD [...] DDDDDDDD  CCCCCCCC */
+      int i;
+      int datalen = rawbytes[2];
+      if ((datalen+3) >= ppos) { /* This is not long enough */
+        if (ppos == 12) {
+          /* By default, culfw only receives up to 12 bytes long packets.
+           * To fix this, you need to modify the file clib/rf_native.c in culfw
+           * and increase CC1100_FIFOTHR from the default 2 to at least 5, then
+           * recompile the fw and reflash your CUL. */
+          VERBPRINT(3, "Discarding received custom sensor packet - claimed data"
+                       " length %d is too long for packet length %d. Note: this"
+                       " might be caused by a default culfw limitation.\n",
+                       datalen, ppos);
+        } else {
+          VERBPRINT(3, "Discarding received custom sensor packet - claimed data"
+                       " length %d is too long for packet length %d\n",
+                       datalen, ppos);
+        }
+        return;
+      }
+      if (lcccrc(&rawbytes[0], datalen + 3) != rawbytes[datalen + 3]) { /* bad CRC */
+        VERBPRINT(3, "Discarding received custom sensor packet due to CRC fail\n");
+        return;
+      }
+      sprintf(lastline, "OK CC %u", rawbytes[1]);
+      for (i = 0; i < datalen; i++) {
+        unsigned char decspf[10];
+        sprintf(decspf, " %u", rawbytes[i+3]);
+        strcat(lastline, decspf);
+      }
+    } else if ((rawbytes[0] & 0xf0) == 0x90) { /* "LaCrosse" sensor */
+      /* Packets are always 5 bytes, and thanks to LaCrosseITPlusReader we
+       * know the format: SSSS.DDDD DDN_.TTTT TTTT.TTTT WHHH.HHHH CCCC.CCCC
+       * (see LaCrosseITPlusReader for detailed explanation) */
+      unsigned int rtemp;
+      sid = ((rawbytes[0] & 0x0f) << 2) | (rawbytes[1] >> 6);
+      /* Check CRC */
+      if (lcccrc(&rawbytes[0], 4) != rawbytes[4]) { /* bad CRC */
+        VERBPRINT(3, "Discarding received LaCrosse sensor data due to CRC fail\n");
+        return;
+      }
+      /* Temp is BCD (binary coded decimal) which is not nice to process :-/ */
+      /* On the other hand, it permits us to do some more sanity checks,
+       * hopefully catching more errors that the CRC did not */
+      if (((rawbytes[2] >> 4) >= 10) || ((rawbytes[2] & 0x0f) >= 10)) {
+        VERBPRINT(3, "Discarding received LaCrosse sensor data due to invalid BCD data\n");
+        return;
+      }
+      rtemp = (rawbytes[1] & 0x0f) * 100;
+      rtemp += (rawbytes[2] >> 4) * 10;
+      rtemp += (rawbytes[2] & 0x0f);
+      /* the format received from the sensor is (temp - 40.0), what goes out in
+       * the JeeLink packet is (temp + 100.0) instead. Why? I have no clue. */
+      rtemp += 600; /* 100 - 40 */
+      sprintf(lastline, "OK 9 %u %u %u %u %u",
+                        sid,
+                        ((rawbytes[1] & 0x20) == 0x20) ? 129 : 1, /* this would also encode a sensor type, but we don't parse that below anyways */
+                        (rtemp >> 8),
+                        (rtemp & 0xff),
+                        rawbytes[3]);
+    } else { /* not a known sensor type */
+      return;
+    }
+  }
   /* OK CC 7 23 144 34 53 133                         hawotempdev2016 length=8 */
   /* OK CC 8 247 98 194 159 169 198                   foxtempdev2016  length=9 */
   /* OK 9 9 1 4 194 32                                lacrosse        length=7 */
@@ -514,6 +620,8 @@ int main(int argc, char ** argv)
       verblev--;
     } else if (strcmp(argv[curarg], "-f") == 0) {
       runinforeground = 1;
+    } else if (strcmp(argv[curarg], "-C") == 0) {
+      receivertype = RECTCUL;
     } else if (strcmp(argv[curarg], "-h") == 0) {
       usage(argv[0]); exit(0);
     } else if (strcmp(argv[curarg], "--help") == 0) {
@@ -641,25 +749,48 @@ int main(int argc, char ** argv)
     {
       /* configure serial port parameters */
       struct termios tio;
-      strcpy(jlinitstr, "0a "); /* Turn off that annoying ultrabright blue LED */
-      if (forcebitrate == 0) {
-        if (havefastsensors) { /* do we have at least 1 sensor that could use the faster rate of 17241? */
-          strcat(jlinitstr, "30t "); /* Set to automatically switch data rate every 30 seconds */
-        } else {
-          strcat(jlinitstr, "1r "); /* Fixed slow rate of 9579 */
-        }
-      } else if (forcebitrate < 0) {
-        strcat(jlinitstr, "30t "); /* Set to automatically switch data rate every 30 seconds */
-      } else if (forcebitrate == 9579) {
-        strcat(jlinitstr, "1r "); /* Fixed slow rate of 9579 */
-      } else if (forcebitrate == 17241) {
-        strcat(jlinitstr, "0r "); /* Fixed fast rate of 17241 */
-      } else {
-        fprintf(stderr, "WARNING: Don't know how to do a bitrate of %d, ignoring bitrate setting!\n", forcebitrate);
+      if (receivertype == RECTJEELINK) {
+        strcpy(jlinitstr, "0a "); /* Turn off that annoying ultrabright blue LED */
+      } else if (receivertype == RECTCUL) {
+        strcpy(jlinitstr, ""); /* Currently nothing needed here */
       }
-      strcat(jlinitstr, "?");
+      if (receivertype == RECTJEELINK) {
+        if (forcebitrate == 0) {
+          if (havefastsensors) { /* do we have at least 1 sensor that could use the faster rate of 17241? */
+            strcat(jlinitstr, "30t "); /* Set to automatically switch data rate every 30 seconds */
+          } else {
+            strcat(jlinitstr, "1r "); /* Fixed slow rate of 9579 */
+          }
+        } else if (forcebitrate < 0) {
+          strcat(jlinitstr, "30t "); /* Set to automatically switch data rate every 30 seconds */
+        } else if (forcebitrate == 9579) {
+          strcat(jlinitstr, "1r "); /* Fixed slow rate of 9579 */
+        } else if (forcebitrate == 17241) {
+          strcat(jlinitstr, "0r "); /* Fixed fast rate of 17241 */
+        } else {
+          fprintf(stderr, "WARNING: Don't know how to do a bitrate of %d, ignoring bitrate setting!\n", forcebitrate);
+        }
+        strcat(jlinitstr, "?"); /* show firmware version */
+      } else if (receivertype == RECTCUL) {
+        if (forcebitrate <= 0) {
+          fprintf(stderr, "ERROR: with CUL as a receiver, you currently need to specify a fixed bitrate, as it cannot automatically switch.\n");
+          exit(1);
+        } else if (forcebitrate == 9579) {
+          strcat(jlinitstr, "Nr2\r\n");
+        } else if (forcebitrate == 17241) {
+          strcat(jlinitstr, "Nr1\r\n");
+        } else {
+          fprintf(stderr, "ERROR: Don't know how to program a bitrate of %d into CUL!\n", forcebitrate);
+          exit(1);
+        }
+        strcat(jlinitstr, "V\r\nVH\r\n"); /* show firmware and hardware version */
+      }
       tcgetattr(serialfd, &tio);
-      cfsetspeed(&tio, B57600);
+      if (receivertype == RECTJEELINK) {
+        cfsetspeed(&tio, B57600);
+      } else if (receivertype == RECTCUL) {
+        cfsetspeed(&tio, B115200);
+      }
       tio.c_lflag &= ~(ICANON | ECHO); /* Clear ICANON and ECHO. */
       tio.c_iflag &= ~(IXON | IGNBRK); /* no flow control */
       tio.c_cflag &= ~(CSTOPB); /* just one stop bit */
