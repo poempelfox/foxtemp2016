@@ -302,6 +302,9 @@ static void parseserialline(unsigned char * origlastline, struct daemondata * dd
     /* Instead of implementing all the logic below twice, we convert the
      * raw format from the CUL into the preprocessed format a Jeelink would
      * deliver. Waaaaaay less work. */
+    /* Example strings the receiver may spit out:
+     * N02CC3A06F7604A9332EC0A04F6CCAB4D3058D5C5769932D398 (not with default culfw)
+     * N019CC4503651AAAA000381FFEB (default culfw, at most 12 bytes data) */
     if ((strncmp(&origlastline[0], "N01", 3) != 0)
      && (strncmp(&origlastline[0], "N02", 3) != 0)) {
       return; /* Not a string containing a raw packet */
@@ -321,8 +324,8 @@ static void parseserialline(unsigned char * origlastline, struct daemondata * dd
         if (ppos == 12) {
           /* By default, culfw only receives up to 12 bytes long packets.
            * To fix this, you need to modify the file clib/rf_native.c in culfw
-           * and increase CC1100_FIFOTHR from the default 2 to at least 5, then
-           * recompile the fw and reflash your CUL. */
+           * and increase CC1100_FIFOTHR from the default 2 to at least 5 (=24
+           * bytes), then recompile the fw and reflash your CUL. */
           VERBPRINT(3, "Discarding received custom sensor packet - claimed data"
                        " length %d is too long for packet length %d. Note: this"
                        " might be caused by a default culfw limitation.\n",
@@ -795,7 +798,7 @@ int main(int argc, char ** argv)
       tio.c_iflag &= ~(IXON | IGNBRK); /* no flow control */
       tio.c_cflag &= ~(CSTOPB); /* just one stop bit */
       tcsetattr(serialfd, TCSAFLUSH, &tio);
-      /* Now give the jlink some time to reboot, then send the init string */
+      /* Now give the jeelink some time to reboot, then send the init string */
       sleep(2);
       if (write(serialfd, jlinitstr, strlen(jlinitstr)) != strlen(jlinitstr)) {
         fprintf(stderr, "%s\n", "WARNING: init-string was not sent to the Jeelink successfully.");
