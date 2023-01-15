@@ -381,12 +381,12 @@ static void parseserialline(unsigned char * origlastline, struct daemondata * dd
       return;
     }
   }
-  /* OK CC 7 23 144 34 53 133                         hawotempdev2016 length=8 */
-  /* OK CC 8 247 98 194 159 169 198                   foxtempdev2016  length=9 */
-  /* OK 9 9 1 4 194 32                                lacrosse        length=7 */
-  /* OK CC 7 245 1 126 151 87 51 120 96 97 0 33 0 95  foxstaub2018    length=16 */
-  /* OK CC 2 249 0 0 34 0 0 26 157                    foxgeig2018     length=11 */
-  /* OK CC 7 253 99 175 152 104 230 119 60 62         hawotempdev2018 length=12 */
+  /* OK CC 7 23 144 34 53 133                           hawotempdev2016 length=8 */
+  /* OK CC 8 247 98 194 159 169 198                     foxtempdev2016  length=9 */
+  /* OK 9 9 1 4 194 32                                  lacrosse        length=7 */
+  /* OK CC 7 245 1 151 87 51 120 96 97 0 33 0 95 0      foxstaub2018    length=16 */
+  /* OK CC 2 249 0 0 34 0 0 26 157                      foxgeig2018     length=11 */
+  /* OK CC 7 253 99 175 152 104 230 119 60 62           hawotempdev2018 length=12 */
   ret = sscanf(lastline, "%s %s %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u",
                          &isok[0], &rtype[0], &sid, &parsed[0], &parsed[1],
                          &parsed[2], &parsed[3], &parsed[4], &parsed[5], &parsed[6],
@@ -435,19 +435,30 @@ static void parseserialline(unsigned char * origlastline, struct daemondata * dd
     newpress = (double)newpraw / 4096.0;
     VERBPRINT(1, "Received data from D-sensor %u: t=%.2lf h=%.2lf v=%.2lf p=%.3lf\n",
                  sid, newtemp, newhum, newvolt, newpress);
-  } else if ((strcmp(rtype, "CC") == 0) && (ret == 16)) { /* foxstaub2018 */
+  } else if ((strcmp(rtype, "CC") == 0) && (ret == 16)) { /* foxstaub2018, 2022 edition */
     uint32_t newpraw;
     if (parsed[0] != 0xf5)  return; /* 'subtype' is not foxstaub (0xf5) */
     stype = 'S';
-    newpraw = (((uint32_t)parsed[1] << 24) | ((uint32_t)parsed[2] << 16)
-             | ((uint32_t)parsed[3] <<  8) | ((uint32_t)parsed[4] <<  0));
-    newpress = (double)newpraw / 25600.0;
-    newtemp = (((double)((parsed[5] << 8) | parsed[6])) / 100.0) - 100.0;
-    newhum = ((double)((parsed[7] << 8) | parsed[8])) / 1024.0;
-    newpm2_5 = ((double)((parsed[9] << 8) | parsed[10])) / 10.0;
-    newpm10 = ((double)((parsed[11] << 8) | parsed[12])) / 10.0;
-    VERBPRINT(1, "Received data from S-sensor %u: t=%.2lf h=%.2lf p=%.3lf pm2_5=%.1lf pm10=%.1lf\n",
-                 sid, newtemp, newhum, newpress, newpm2_5, newpm10);
+    newpraw = (((uint32_t)parsed[1] << 16) | ((uint32_t)parsed[2] <<  8)
+             | ((uint32_t)parsed[3] <<  0));
+    if (newpraw != 0xffffff) {
+      newpress = (double)newpraw / 4096.0;
+    }
+    if ((parsed[4] != 0xff) || (parsed[5] != 0xff)) {
+      newtemp = (-45.00 + 175.0 * ((double)((parsed[4] << 8) | parsed[5]) / 65535.0));
+    }
+    if ((parsed[6] != 0xff) || (parsed[7] != 0xff)) {
+      newhum = (100.0 * ((double)((parsed[6] << 8) | parsed[7]) / 65535.0));
+    }
+    newpm2_5 = ((double)((parsed[8] << 8) | parsed[9])) / 10.0;
+    newpm10 = ((double)((parsed[10] << 8) | parsed[11])) / 10.0;
+    /* Voltage is a bit complicated: reference voltage is set to 2.56V,
+     * so 255 == 2.56V at the ADC pin. The ADC pin however is connected
+     * through a 10M/1M voltage divider, so 1V at the ADC pin is actually
+     * 11V at the battery. */
+    newvolt = ((double)parsed[12] / 100.0) * 11.0;
+    VERBPRINT(1, "Received data from S-sensor %u: t=%.2lf h=%.2lf p=%.3lf pm2_5=%.1lf pm10=%.1lf v=%.2lf\n",
+                 sid, newtemp, newhum, newpress, newpm2_5, newpm10, newvolt);
   } else if ((strcmp(rtype, "9") == 0) && (ret == 7)) { /* cheap lacrosse */
     stype = 'L';
     newtemp = ((double)((parsed[1] << 8) | parsed[2]) - 1000.0) / 10.0;
