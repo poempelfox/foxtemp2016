@@ -63,6 +63,11 @@ together. The bill of materials therefore is short:
   without damaging it would not be an easy task, and because the breakout
   board serves perfectly as what would be called a "shield" in the Arduino
   world: It's plugged/stacked on top of the microcontroller board.
+  A word of warning: In 2021, Adafruit made a new revision of their board,
+  adding so called "STEMMA QT" connectors and a useless always-on LED
+  wasting lots of power on an otherwise ultra-low-power circuitry. The
+  outer dimensions have also changed, which could mean it no longer fits
+  into the case (untested).
 * a voltage divider for measuring the current voltage of the batteries, so you
   can tell how full they are. You cannot directly connect the batteries
   to an ADC pin of the microcontroller, because that runs at 3.0 volts,
