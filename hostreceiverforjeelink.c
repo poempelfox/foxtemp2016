@@ -446,8 +446,6 @@ static void parseserialline(unsigned char * origlastline, struct daemondata * dd
     }
     if ((parsed[4] != 0xff) || (parsed[5] != 0xff)) {
       newtemp = (-45.00 + 175.0 * ((double)((parsed[4] << 8) | parsed[5]) / 65535.0));
-    }
-    if ((parsed[6] != 0xff) || (parsed[7] != 0xff)) {
       newhum = (100.0 * ((double)((parsed[6] << 8) | parsed[7]) / 65535.0));
     }
     newpm2_5 = ((double)((parsed[8] << 8) | parsed[9])) / 10.0;
