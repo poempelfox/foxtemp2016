@@ -764,7 +764,7 @@ int main(int argc, char ** argv)
       if (receivertype == RECTJEELINK) {
         strcpy(jlinitstr, "0a "); /* Turn off that annoying ultrabright blue LED */
       } else if (receivertype == RECTCUL) {
-        strcpy(jlinitstr, ""); /* Currently nothing needed here */
+        /*strcpy(jlinitstr, "l00");*/ /* Turn off the blinking blue LED (although it's far less ultrabright and annoying than the one on the Jeelink) */
       }
       if (receivertype == RECTJEELINK) {
         if (forcebitrate == 0) {
@@ -796,6 +796,16 @@ int main(int argc, char ** argv)
           exit(1);
         }
         strcat(jlinitstr, "V\r\nVH\r\n"); /* show firmware and hardware version */
+        /* If you have problems with the reception, you can try playing around with
+         * the Automatic Gain settings in the AGCTRL0-2 registers. See the datasheet
+         * of the CC1101 for details. */
+        /* AGCTRL2 (register 0x1B) sets (among other things) the target amplitude.
+         * According to culfw documentation, the default value should be 0x07, on our
+         * CUL it actually was 0x43. */
+        /*strcat(jlinitstr, "Cw1b07");*/
+        /* AGCTRL0 (register 0x1D) set (among other things) the decision binary.
+         * the default value is 0x91 which selects 8db decision boundary. */
+        /*strcat(jlinitstr, "Cw1d91");*/
       }
       tcgetattr(serialfd, &tio);
       if (receivertype == RECTJEELINK) {
