@@ -764,7 +764,15 @@ int main(int argc, char ** argv)
       if (receivertype == RECTJEELINK) {
         strcpy(jlinitstr, "0a "); /* Turn off that annoying ultrabright blue LED */
       } else if (receivertype == RECTCUL) {
-        /*strcpy(jlinitstr, "l00");*/ /* Turn off the blinking blue LED (although it's far less ultrabright and annoying than the one on the Jeelink) */
+        strcpy(jlinitstr, "");
+        /* While there is a command to turn off the blinking blue LED on
+         * the CUL (although it's less ultrabright and annoying than the
+         * one on the Jeelink), that command is persistent across reboots
+         * because it writes to the EEPROM. It is therefore recommended
+         * to NOT add it to the initstring because it's only needed once,
+         * and sending it repeatedly will wear down the EEPROM.
+         * Just send it once manually, e.g. with something like
+         * "echo l00 > /dev/ttyACMn" in a terminal. */
       }
       if (receivertype == RECTJEELINK) {
         if (forcebitrate == 0) {
@@ -802,10 +810,12 @@ int main(int argc, char ** argv)
         /* AGCTRL2 (register 0x1B) sets (among other things) the target amplitude.
          * According to culfw documentation, the default value should be 0x07, on our
          * CUL it actually was 0x43. */
-        /*strcat(jlinitstr, "Cw1b07");*/
+        /*strcat(jlinitstr, "Cw1b07\r\n"); */
         /* AGCTRL0 (register 0x1D) set (among other things) the decision binary.
          * the default value is 0x91 which selects 8db decision boundary. */
-        /*strcat(jlinitstr, "Cw1d91");*/
+        /*strcat(jlinitstr, "Cw1d91\r\n"); */
+        /* Show values of AGCTRL2+0 registers */
+        /*strcat(jlinitstr, "C1b\r\nC1d\r\n"); */
       }
       tcgetattr(serialfd, &tio);
       if (receivertype == RECTJEELINK) {
