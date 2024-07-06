@@ -808,14 +808,24 @@ int main(int argc, char ** argv)
          * the Automatic Gain settings in the AGCTRL0-2 registers. See the datasheet
          * of the CC1101 for details. */
         /* AGCTRL2 (register 0x1B) sets (among other things) the target amplitude.
-         * According to culfw documentation, the default value should be 0x07, on our
-         * CUL it actually was 0x43. */
-        /*strcat(jlinitstr, "Cw1b07\r\n"); */
-        /* AGCTRL0 (register 0x1D) set (among other things) the decision binary.
-         * the default value is 0x91 which selects 8db decision boundary. */
-        /*strcat(jlinitstr, "Cw1d91\r\n"); */
-        /* Show values of AGCTRL2+0 registers */
-        /*strcat(jlinitstr, "C1b\r\nC1d\r\n"); */
+         * According to culfw documentation, the default value should be 0x07, but
+         * in the 'native mode' we use, the firmware sets it to 0x43 instead -
+         * which disallows the highest gain setting.
+         * Values probably worth trying: 07 - target amplitude 42 dB;
+         * 47 / 43 - TA 42 dB / 33 dB, highest DVGA gain disallowed */
+        strcat(jlinitstr, "Cw1b43\r\n");
+        /* AGCTRL1 (register 0x1C) sets (among other things) strategies for AGC.
+         * default set by the firmware in native mode is 0x68, which selects
+         * "strategy 1" with a relative carrier detection threshold of 10 dB
+         * relative RSSI increase and disabled absolute c.d.t. */
+        strcat(jlinitstr, "Cw1c68\r\n");
+        /* AGCTRL0 (register 0x1D) sets (among other things) the decision binary.
+         * the default value is 0x91 which selects 8db decision boundary.
+         * this value is not touched by the firmware in native mode, so has the
+         * poweron default value. */
+        strcat(jlinitstr, "Cw1d91\r\n");
+        /* Show values of AGCTRL2-AGCTRL0 registers */
+        /*strcat(jlinitstr, "C1b\r\nC1c\r\nC1d\r\n"); */
       }
       tcgetattr(serialfd, &tio);
       if (receivertype == RECTJEELINK) {
