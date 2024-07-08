@@ -817,7 +817,9 @@ int main(int argc, char ** argv)
         /* AGCTRL1 (register 0x1C) sets (among other things) strategies for AGC.
          * default set by the firmware in native mode is 0x68, which selects
          * "strategy 1" with a relative carrier detection threshold of 10 dB
-         * relative RSSI increase and disabled absolute c.d.t. */
+         * relative RSSI increase and disabled absolute c.d.t..
+         * Value definitely worth trying: 40 which is the poweron-default of the
+         * chip and worked really well in one case. */
         strcat(jlinitstr, "Cw1c68\r\n");
         /* AGCTRL0 (register 0x1D) sets (among other things) the decision binary.
          * the default value is 0x91 which selects 8db decision boundary.
