@@ -224,6 +224,8 @@ There is [some information about this upstream](http://jeelabs.org/2013/03/03/pr
 
 ## Software
 
+### FHEM module
+
 The FHEM module can be found in the file `36_Foxtemp2016viaJeelink.pm`.
 I'm not really proud of this one, it's a mess. Because there seems
 to be no usable documentation on writing proper FHEM modules, I did
@@ -255,4 +257,61 @@ where addr is the ID of the sensor, either in decimal or
 (prefixed with 0x) in hexadecimal notation.
 
 <img src="pics/foxtempinfhem1.png" alt="many foxtemp2016 devices showing in a FHEM dashboard" width="500">
+
+### hostreceiverforjeelink
+
+This is a small daemon written in C for serving the data received
+from a foxtemp2016 device to the network, using a JeeLink v3c (or
+one of the many compatible clones) as the receiver device.
+This is the only part of this repository that keeps getting
+updates, because over the years I have added support for receiving
+many more of my projects to this little daemon, and by now it
+would be warranted to break this out into its own repository.
+However, I am lazy, so it will just keep on living here.
+
+This now supports the following wireless sensors:
+* foxtemp2016
+* hawotempdev2016
+* hawotempdev2018
+* foxgeig2018
+* foxstaub2018, 2022 edition
+* foxtemp2022
+* some relatively cheap commercial "LaCrosse" sensors. I mainly use Technoline TX29DTH-IT+, they work well for me.
+
+This supports the following receivers, that need to be attached via USB:
+* JeeLink v3c or one of the many clones, with the "LaCrosse IT plus reader" firmware intended for FHEM project. At the time of writing this, you can find the source for that on [the FHEM subversion in the contrib directory](https://svn.fhem.de/trac/browser/trunk/fhem/contrib/arduino/). You will probably need to recompile that firmware from source to enable support for "custom sensor".
+* a CUL from busware.de, running [culfw](http://culfw.de/). You will need to modify the sourcecode of the firmware and recompile it, because otherwise it defaults to truncating received packets after 12 bytes, and some of our sensors send more than that. Modify the file `clib/rf_native.c` in culfw and increase <tt>CC1100_FIFOTHR</tt> from the default 2 to at least 4 (=20 Bytes). Unfortunately, in my experience, the CC1101 is a diva when it comes to reception, orders of magnitude more fragile than the RFM69 on the JeeLink. It can receive very weak signals, which is great, but it also has the tendency to automatically adjust its sensitivity down to absolutely zero if it receives any interfering noise. As a result, I have had great success in some locations, but massive reception problems in others, and would not recommend using this as a receiver.
+
+To compile the hostreceiver, call `make hostreceiverforjeelink`.
+
+```
+usage: ./hostreceiverforjeelink [-v] [-q] [-d n] [-h] command <parameters>
+ -v     more verbose output. can be repeated numerous times.
+ -q     less verbose output. using this more than once will have no effect.
+ -d p   Port to which the Jeelink is attached (default: /dev/ttyUSB2)
+ -r br  Select bitrate mode. -1 makes the JeeLink toggle, 1 or 9579
+        forces 9579 baud, 2 or 17241 forces 17241. The default 0 picks
+        a value based on the selected sensors.
+ -f     relevant for daemon mode only: run in foreground.
+ -C     receiver device is not a Jeelink but a CUL, running culfw >= 1.67
+ -h     show this help
+Valid commands are:
+ daemon   Daemonize and answer queries. This requires one or more
+          parameters in the format
+           [sensortype]sensorid:port[:outputformat]
+          where sensorid is the sensor-id-number of a sensor;
+          sensortype is one of: H for a hawotempdev2016 (this is also
+          the default if you omit the type), F for a foxtempdev2016, L for some
+          commercial sensors using the LaCrosse protocol, S for a foxstaub2018,
+          G for a foxgeig2018;
+          port is a TCP port where the data from this sensor is to be served
+          The optional outputformat specifies how the
+          output to the network should look like.
+          Available are: %B = barometric pressure, %c = CPM 1 min,
+          %C = CPM 60 min, %PM2.5u = PM 2.5u, %PM10u = PM 10u,
+          %H = humidity, %L = last seen timestamp, %S = sensorid,
+          %T = temperature. The default is '%S %T' even for sensors that
+          don't even measure temperature.
+          Examples: 'H42:31337'   'F23:7777:%T %H'
+```
 
