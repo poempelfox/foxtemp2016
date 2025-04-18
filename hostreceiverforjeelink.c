@@ -324,8 +324,9 @@ static void parseserialline(unsigned char * origlastline, struct daemondata * dd
         if (ppos == 12) {
           /* By default, culfw only receives up to 12 bytes long packets.
            * To fix this, you need to modify the file clib/rf_native.c in culfw
-           * and increase CC1100_FIFOTHR from the default 2 to at least 5 (=24
-           * bytes), then recompile the fw and reflash your CUL. */
+           * and increase CC1100_FIFOTHR from the default 2 to at least 4 (=20
+           * bytes RX FIFO, that still leaves 45 bytes for the TX FIFO), then
+           * recompile the fw and reflash your CUL. */
           VERBPRINT(3, "Discarding received custom sensor packet - claimed data"
                        " length %d is too long for packet length %d. Note: this"
                        " might be caused by a default culfw limitation.\n",
@@ -806,26 +807,28 @@ int main(int argc, char ** argv)
         strcat(jlinitstr, "V\r\nVH\r\n"); /* show firmware and hardware version */
         /* If you have problems with the reception, you can try playing around with
          * the Automatic Gain settings in the AGCTRL0-2 registers. See the datasheet
-         * of the CC1101 for details. */
+         * of the CC1101 for details.
+         * The settings we set here worked best _for me_. However, since this chip
+         * seems to be _extremely_ finicky, YMMV. */
         /* AGCTRL2 (register 0x1B) sets (among other things) the target amplitude.
          * According to culfw documentation, the default value should be 0x07, but
          * in the 'native mode' we use, the firmware sets it to 0x43 instead -
          * which disallows the highest gain setting.
          * Values probably worth trying: 07 - target amplitude 42 dB;
          * 47 / 43 - TA 42 dB / 33 dB, highest DVGA gain disallowed */
-        strcat(jlinitstr, "Cw1b43\r\n");
+        strcat(jlinitstr, "Cw1b07\r\n");
         /* AGCTRL1 (register 0x1C) sets (among other things) strategies for AGC.
          * default set by the firmware in native mode is 0x68, which selects
          * "strategy 1" with a relative carrier detection threshold of 10 dB
          * relative RSSI increase and disabled absolute c.d.t..
          * Value definitely worth trying: 40 which is the poweron-default of the
          * chip and worked really well in one case. */
-        strcat(jlinitstr, "Cw1c68\r\n");
-        /* AGCTRL0 (register 0x1D) sets (among other things) the decision binary.
+        strcat(jlinitstr, "Cw1c00\r\n");
+        /* AGCTRL0 (register 0x1D) sets (among other things) the decision boundary.
          * the default value is 0x91 which selects 8db decision boundary.
          * this value is not touched by the firmware in native mode, so has the
          * poweron default value. */
-        strcat(jlinitstr, "Cw1d91\r\n");
+        strcat(jlinitstr, "Cw1d81\r\n");
         /* Show values of AGCTRL2-AGCTRL0 registers */
         /*strcat(jlinitstr, "C1b\r\nC1c\r\nC1d\r\n"); */
       }
