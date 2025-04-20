@@ -277,9 +277,11 @@ This now supports the following wireless sensors:
 * foxstaub2018, 2022 edition
 * foxtemp2022
 * some relatively cheap commercial "LaCrosse" sensors. I mainly use Technoline TX29DTH-IT+, they work well for me.
+* some weather stations made by Davis - only with special receiver firmware, see below.
 
 This supports the following receivers, that need to be attached via USB:
-* JeeLink v3c or one of the many clones, with the "LaCrosse IT plus reader" firmware intended for FHEM project. At the time of writing this, you can find the source for that on [the FHEM subversion in the contrib directory](https://svn.fhem.de/trac/browser/trunk/fhem/contrib/arduino/). You will probably need to recompile that firmware from source to enable support for "custom sensor".
+* JeeLink v3c or one of the many clones, with the "LaCrosse IT plus reader" firmware intended for the FHEM project. At the time of writing this, you can find the source for that on [the FHEM subversion in the contrib directory](https://svn.fhem.de/trac/browser/trunk/fhem/contrib/arduino/). You will probably need to recompile that firmware from source to enable support for "custom sensor".
+* JeeLink v3c or one of the many clones, with the "DavisVantage" firmware intended for the FHEM project. You will need to recompile that firmware from source with `KVP_LONG_KEY_FORMAT` enabled. This can only be used to receive some of the weather stations made by Davis, but not for any other sensors. And as that firmware is in no way supported by Davis and was simply reverse-engineered from what these stations transmit (unencrypted), results may be inaccurate, and YMMV.
 * a CUL from busware.de, running [culfw](http://culfw.de/). You will need to modify the sourcecode of the firmware and recompile it, because otherwise it defaults to truncating received packets after 12 bytes, and some of our sensors send more than that. Modify the file `clib/rf_native.c` in culfw and increase <tt>CC1100_FIFOTHR</tt> from the default 2 to at least 4 (=20 Bytes). Unfortunately, in my experience, the CC1101 is a diva when it comes to reception, orders of magnitude more fragile than the RFM69 on the JeeLink. It can receive very weak signals, which is great, but it also has the tendency to automatically adjust its sensitivity down to absolutely zero if it receives any interfering noise. As a result, I have had great success in some locations, but massive reception problems in others, and would not recommend using this as a receiver.
 
 To compile the hostreceiver, call `make hostreceiverforjeelink`.

@@ -38,6 +38,7 @@ int restartonerror = 0;
 time_t datavalidduration = 180;
 #define RECTJEELINK 0
 #define RECTCUL 1
+#define RECTJEELDAVISV 2
 int receivertype = RECTJEELINK;
 
 struct daemondata {
@@ -52,8 +53,12 @@ struct daemondata {
   double lastpressure;
   double lastpm2_5;
   double lastpm10;
+  double lastuv;
+  double lastsolar;
+  double lastrainrate;
   uint32_t lastcpm1;
   uint32_t lastcpm60;
+  uint32_t lastraintipcount;
   unsigned char outputformat[1000];
   struct daemondata * next;
 };
@@ -69,24 +74,41 @@ static void usage(char *name)
   printf("        a value based on the selected sensors.\n");
   printf(" -f     relevant for daemon mode only: run in foreground.\n");
   printf(" -C     receiver device is not a Jeelink but a CUL, running culfw >= 1.67\n");
+  printf(" -D     receiver device is running the 'DavisVantage' receiver firmware\n");
   printf(" -h     show this help\n");
   printf("Valid commands are:\n");
   printf(" daemon   Daemonize and answer queries. This requires one or more\n");
   printf("          parameters in the format\n");
-  printf("           [sensortype]sensorid:port[:outputformat]\n");
+  printf("            [sensortype]sensorid:port[:outputformat]\n");
   printf("          where sensorid is the sensor-id-number of a sensor;\n");
-  printf("          sensortype is one of: H for a hawotempdev2016 (this is also\n");
-  printf("          the default if you omit the type), F for a foxtempdev2016, L for some\n");
-  printf("          commercial sensors using the LaCrosse protocol, S for a foxstaub2018,\n");
-  printf("          G for a foxgeig2018;\n");
+  printf("          sensortype is one of:\n");
+  printf("            D   hawotempdev2018\n");
+  printf("            F   foxtemp2016 or foxtemp2022 or foxtemp2024 devices\n");
+  printf("            G   foxgeig2018\n");
+  printf("            H   hawotempdev2016 (this is also the default if you omit the type)\n");
+  printf("            L   some commercial sensors using the LaCrosse protocol\n");
+  printf("            S   foxstaub2018\n");
+  printf("            V   some commercial weather stations made by Davis (special receiver\n");
+  printf("                firmware required)\n");
   printf("          port is a TCP port where the data from this sensor is to be served\n");
-  printf("          The optional outputformat specifies how the\n");
-  printf("          output to the network should look like.\n");
-  printf("          Available are: %%B = barometric pressure, %%c = CPM 1 min,\n");
-  printf("          %%C = CPM 60 min, %%PM2.5u = PM 2.5u, %%PM10u = PM 10u,\n");
-  printf("          %%H = humidity, %%L = last seen timestamp, %%S = sensorid,\n");
-  printf("          %%T = temperature. The default is '%%S %%T' even for sensors that\n");
-  printf("          don't even measure temperature.\n");
+  printf("          The optional outputformat specifies how the output to\n");
+  printf("          the network should look like. Available format codes are:\n");
+  printf("            %%B        barometric pressure\n");
+  printf("            %%c        CPM 1 min\n");
+  printf("            %%C        CPM 60 min\n");
+  printf("            %%H        humidity\n");
+  printf("            %%L        last seen timestamp\n");
+  printf("            %%PM2.5u   PM 2.5u\n");
+  printf("            %%PM10u    PM 10u\n");
+  printf("            %%RR       rain rate\n");
+  printf("            %%RT       rain tip counter\n");
+  printf("            %%S        sensorid\n");
+  printf("            %%T        temperature\n");
+  printf("            %%UI       solar intensity\n");
+  printf("            %%UV       UV index\n");
+  printf("            %%V        battery voltage\n");
+  printf("          The default is '%%S %%T', even for sensors that don't even\n");
+  printf("          measure temperature.\n");
   printf("          Examples: 'H42:31337'   'F23:7777:%%T %%H'\n");
 }
 
@@ -207,14 +229,37 @@ static void printtooutbuf(char * outbuf, int oblen, struct daemondata * dd) {
           outbuf += sprintf(outbuf, "%.1lf", dd->lastpm10);
         } else {
           /* This is invalid but there isn't much we can do here. */
+          outbuf += sprintf(outbuf, "%s", "P?");
         }
       } else if (*pos == 'r') { /* carriage return */
         *outbuf = '\r';
         outbuf++;
+      } else if (*pos == 'R') { /* Rain sensors */
+        if (strncmp(pos + 1, "R", 1) == 0) { /* Rain rate */
+          pos = pos + 1;
+          if (((dd->lastseen + datavalidduration) < time(NULL))
+           || (dd->lastrainrate <= -1.0)) { /* Stale data / no data yet */
+            outbuf += sprintf(outbuf, "%s", "N/A");
+          } else {
+            outbuf += sprintf(outbuf, "%.2lf", dd->lastrainrate);
+          }
+        } else if (strncmp(pos + 1, "T", 1) == 0) { /* Rain tip counter */
+          pos = pos + 1;
+          if (((dd->lastseen + datavalidduration) < time(NULL))
+           || (dd->lastraintipcount == 0xffffffff)) { /* Stale data / no data yet */
+            outbuf += sprintf(outbuf, "%s", "N/A");
+          } else {
+            outbuf += sprintf(outbuf, "%lu", (unsigned long)dd->lastraintipcount);
+          }
+        } else {
+          /* This is invalid but there isn't much we can do here. */
+          outbuf += sprintf(outbuf, "%s", "R?");
+        }
       } else if (*pos == 'S') { /* SensorID */
         outbuf += sprintf(outbuf, "0x%02x", dd->sensorid);
       } else if ((*pos == 'T') || (*pos == 't')) { /* Temperature */
-        if ((dd->lastseen + datavalidduration) < time(NULL)) { /* Stale data / no data yet */
+        if (((dd->lastseen + datavalidduration) < time(NULL))
+         || (dd->lasttemp <= -274.0)) { /* Stale data / no data yet */
           outbuf += sprintf(outbuf, "%s", "N/A");
         } else {
           if (*pos == 'T') { /* fixed width */
@@ -222,6 +267,27 @@ static void printtooutbuf(char * outbuf, int oblen, struct daemondata * dd) {
           } else { /* variable width. */
             outbuf += sprintf(outbuf, "%.2lf", dd->lasttemp);
           }
+        }
+      } else if (*pos == 'U') { /* UV- or solar intensity */
+        if (strncmp(pos + 1, "V", 1) == 0) {
+          pos = pos + 1;
+          if (((dd->lastseen + datavalidduration) < time(NULL))
+           || (dd->lastuv <= -1.0)) { /* Stale data / no data yet */
+            outbuf += sprintf(outbuf, "%s", "N/A");
+          } else {
+            outbuf += sprintf(outbuf, "%.2lf", dd->lastuv);
+          }
+        } else if (strncmp(pos + 1, "I", 1) == 0) {
+          pos = pos + 1;
+          if (((dd->lastseen + datavalidduration) < time(NULL))
+           || (dd->lastsolar <= -1.0)) { /* Stale data / no data yet */
+            outbuf += sprintf(outbuf, "%s", "N/A");
+          } else {
+            outbuf += sprintf(outbuf, "%.2lf", dd->lastsolar);
+          }
+        } else {
+          /* This is invalid but there isn't much we can do here. */
+          outbuf += sprintf(outbuf, "%s", "U?");
         }
       } else if ((*pos == 'V') || (*pos == 'v')) { /* Voltage */
         if ((dd->lastseen + datavalidduration) < time(NULL)) { /* Stale data / no data yet */
@@ -292,208 +358,322 @@ static void parseserialline(unsigned char * origlastline, struct daemondata * dd
   double newtemp = -274.0, newvolt = 0.0;
   double newhum = 106.0; /* LaCrosse sensors use 106 to show they have no
                           * humidity data, so we just recycle that */
-  double newpress = 0.0, newpm2_5 = -1.0, newpm10 = -1.0;
+  double newpress = -1.0, newpm2_5 = -1.0, newpm10 = -1.0;
+  double newsolar = -1.0, newuv = -1.0;
+  double newrainrate = -1.0; uint32_t newraintipcount = 0xffffffff;
   uint32_t newcpm1 = 0xffffff, newcpm60 = 0xffffff;
   
   strcpy(lastline, origlastline); /* Just so we don't modify the original string */
-  if (receivertype == RECTCUL) {
-    uint8_t rawbytes[LLSIZE];
-    int ppos;
-    /* Instead of implementing all the logic below twice, we convert the
-     * raw format from the CUL into the preprocessed format a Jeelink would
-     * deliver. Waaaaaay less work. */
-    /* Example strings the receiver may spit out:
-     * N02CC3A06F7604A9332EC0A04F6CCAB4D3058D5C5769932D398 (not with default culfw)
-     * N019CC4503651AAAA000381FFEB (default culfw, at most 12 bytes data) */
-    if ((strncmp(&origlastline[0], "N01", 3) != 0)
-     && (strncmp(&origlastline[0], "N02", 3) != 0)) {
-      return; /* Not a string containing a raw packet */
-    }
-    ppos = 0;
-    while (strlen(&origlastline[3 + ppos * 2]) >= 2) {
-      ret = sscanf(&origlastline[3 + ppos * 2], "%02hhx", &rawbytes[ppos]);
-      if (ret != 1) return; /* non-hex stuff - invalid data */
-      ppos++;
-    }
-    if (ppos < 6) return; /* This cannot be valid, it's too short */
-    if (rawbytes[0] == 0xcc) { /* "Custom" sensor */
-      /* Format: SSSSSSSS  IIIIIIII  BBBBBBBB  DDDDDDDD [...] DDDDDDDD  CCCCCCCC */
-      int i;
-      int datalen = rawbytes[2];
-      if ((datalen+3) >= ppos) { /* This is not long enough */
-        if (ppos == 12) {
-          /* By default, culfw only receives up to 12 bytes long packets.
-           * To fix this, you need to modify the file clib/rf_native.c in culfw
-           * and increase CC1100_FIFOTHR from the default 2 to at least 4 (=20
-           * bytes RX FIFO, that still leaves 45 bytes for the TX FIFO), then
-           * recompile the fw and reflash your CUL. */
-          VERBPRINT(3, "Discarding received custom sensor packet - claimed data"
-                       " length %d is too long for packet length %d. Note: this"
-                       " might be caused by a default culfw limitation.\n",
-                       datalen, ppos);
-        } else {
-          VERBPRINT(3, "Discarding received custom sensor packet - claimed data"
-                       " length %d is too long for packet length %d\n",
-                       datalen, ppos);
+  if (receivertype == RECTJEELDAVISV) { /* JeeLink with DavisVantage receiver firmware */
+    /* This differs in almost every aspect from our other receivers and sensors,
+     * so gets its own implementation. */
+    unsigned char ps1[LLSIZE];
+    unsigned char ps2[LLSIZE];
+    unsigned char bigvstr[LLSIZE];
+    unsigned char ps3[LLSIZE];
+    char * saveptr;
+    char * nextpart;
+    // Example string:
+    // OK VALUES DAVIS 5 Channel=1,RSSI=-59,Battery=ok,WindSpeed=0.00,WindDirection=0,Humidity=87.00,
+    ret = sscanf(lastline, "%s %s %s %u %s %s",
+                           &isok[0], &ps1[0], &ps2[0], &sid, &bigvstr[0], &ps3[0]);
+    if (ret != 5) return;
+    if (strcmp(isok, "OK")) return;
+    if (strcmp(ps1, "VALUES")) return;
+    if (strcmp(ps2, "DAVIS")) return;
+    stype = 'V';
+    VERBPRINT(1, "Received data from D-sensor %u:", sid);
+    /* now the actual real parsing starts: We need to split the long string */
+    nextpart = strtok_r(bigvstr, ",", &saveptr);
+    while (nextpart != NULL) {
+      char * ks; char * vs; char * savep2;
+      ks = strtok_r(nextpart, "=", &savep2);
+      if (ks != NULL) {
+        vs = strtok_r(NULL, "=", &savep2);
+        if (vs != NULL) {
+          VERBPRINT(4, " [%s = %s]", ks, vs);
+          if        (strcmp(ks, "Temperature") == 0) {
+            newtemp = strtod(vs, NULL);
+            VERBPRINT(1, " t=%.2lf,", newtemp);
+          } else if (strcmp(ks, "Humidity") == 0) {
+            newhum = strtod(vs, NULL);
+            VERBPRINT(1, " h=%.2lf,", newhum);
+          } else if (strcmp(ks, "UV") == 0) {
+            /* The firmware seems to do quite a bit of nonsense here.
+             * It will subtract 1 unconditionally, so seeing '-1' is
+             * perfectly normal, it can just mean there is no sun.
+             * You can get the "UV index" value from this by dividing
+             * through 50. */
+            newuv = (strtod(vs, NULL) + 1.0) / 50.0;
+            VERBPRINT(1, " uv=%.2lf,", newuv);
+          } else if (strcmp(ks, "Solar") == 0) {
+            newsolar = strtod(vs, NULL) + 1.0; // in W per m^2
+            VERBPRINT(1, " solint=%.2lf,", newsolar);
+          } else if (strcmp(ks, "WindSpeed") == 0) {
+            /* not implemented */
+            /* our weather station does not have the wind vane so we cannot test. */
+          } else if (strcmp(ks, "WindDirection") == 0) {
+            /* not implemented */
+            /* our weather station does not have the wind vane so we cannot test. */
+          } else if (strcmp(ks, "RainSecs") == 0) {
+            /* This is 'seconds between tips' of the bucket. The bucket seems
+             * to be differently sized in NorthAmerica (0.01 inch) and Europe
+             * (0.02mm). We just assume the european version here. */
+            double sbt = strtod(vs, NULL);
+            if (sbt < 0.0) { /* the firmware _should_ report -1 on error */
+              newrainrate = -1.0;
+            } else {
+              /* calculate mm per hour. 0.02mm is the tip size. */
+              newrainrate = (3600 * 0.02) / sbt;
+            }
+            VERBPRINT(1, " rainrate=%.2lf,", newrainrate);
+          } else if (strcmp(ks, "RainTipCount") == 0) {
+            /* This is simply a 7 bit counter that counts up with every bucket
+             * tip, meaning it reverts back to 0 after 127. */
+            newraintipcount = strtoul(vs, NULL, 10);
+            VERBPRINT(1, " raintipctr=%lu,", (unsigned long)newraintipcount);
+          } else if (strcmp(ks, "Battery") == 0) {
+            if (strcmp(vs, "ok") == 0) { /* These are the same fake voltage */
+              newvolt = 2.5; /* values we use for the lacrosse sensors, that */
+            } else {         /* also only have a ok / bad state and no real */
+              newvolt = 1.0; /* battery voltage measurement */
+            }
+            VERBPRINT(1, " v=%.2lf,", newvolt);
+          } else if (strcmp(ks, "Channel") == 0) {
+            /* Useless for us */
+          } else if (strcmp(ks, "RSSI") == 0) {
+            /* Useless for us */
+          } else {
+            VERBPRINT(2, " unknown:%s=%s,", ks, vs);
+          }
         }
-        return;
       }
-      if (lcccrc(&rawbytes[0], datalen + 3) != rawbytes[datalen + 3]) { /* bad CRC */
-        VERBPRINT(3, "Discarding received custom sensor packet due to CRC fail\n");
-        return;
-      }
-      sprintf(lastline, "OK CC %u", rawbytes[1]);
-      for (i = 0; i < datalen; i++) {
-        unsigned char decspf[10];
-        sprintf(decspf, " %u", rawbytes[i+3]);
-        strcat(lastline, decspf);
-      }
-    } else if ((rawbytes[0] & 0xf0) == 0x90) { /* "LaCrosse" sensor */
-      /* Packets are always 5 bytes, and thanks to LaCrosseITPlusReader we
-       * know the format: SSSS.DDDD DDN_.TTTT TTTT.TTTT WHHH.HHHH CCCC.CCCC
-       * (see LaCrosseITPlusReader for detailed explanation) */
-      unsigned int rtemp;
-      sid = ((rawbytes[0] & 0x0f) << 2) | (rawbytes[1] >> 6);
-      /* Check CRC */
-      if (lcccrc(&rawbytes[0], 4) != rawbytes[4]) { /* bad CRC */
-        VERBPRINT(3, "Discarding received LaCrosse sensor data due to CRC fail\n");
-        return;
-      }
-      /* Temp is BCD (binary coded decimal) which is not nice to process :-/ */
-      /* On the other hand, it permits us to do some more sanity checks,
-       * hopefully catching more errors that the CRC did not */
-      if (((rawbytes[2] >> 4) >= 10) || ((rawbytes[2] & 0x0f) >= 10)) {
-        VERBPRINT(3, "Discarding received LaCrosse sensor data due to invalid BCD data\n");
-        return;
-      }
-      rtemp = (rawbytes[1] & 0x0f) * 100;
-      rtemp += (rawbytes[2] >> 4) * 10;
-      rtemp += (rawbytes[2] & 0x0f);
-      /* the format received from the sensor is (temp - 40.0), what goes out in
-       * the JeeLink packet is (temp + 100.0) instead. Why? I have no clue. */
-      rtemp += 600; /* 100 - 40 */
-      sprintf(lastline, "OK 9 %u %u %u %u %u",
-                        sid,
-                        ((rawbytes[1] & 0x20) == 0x20) ? 129 : 1, /* this would also encode a sensor type, but we don't parse that below anyways */
-                        (rtemp >> 8),
-                        (rtemp & 0xff),
-                        rawbytes[3]);
-    } else { /* not a known sensor type */
-      return;
+      nextpart = strtok_r(NULL, ",", &saveptr);
     }
-  }
-  /* OK CC 7 23 144 34 53 133                           hawotempdev2016 length=8 */
-  /* OK CC 8 247 98 194 159 169 198                     foxtempdev2016  length=9 */
-  /* OK 9 9 1 4 194 32                                  lacrosse        length=7 */
-  /* OK CC 7 245 1 151 87 51 120 96 97 0 33 0 95 0      foxstaub2018    length=16 */
-  /* OK CC 2 249 0 0 34 0 0 26 157                      foxgeig2018     length=11 */
-  /* OK CC 7 253 99 175 152 104 230 119 60 62           hawotempdev2018 length=12 */
-  ret = sscanf(lastline, "%s %s %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u",
-                         &isok[0], &rtype[0], &sid, &parsed[0], &parsed[1],
-                         &parsed[2], &parsed[3], &parsed[4], &parsed[5], &parsed[6],
-                         &parsed[7], &parsed[8], &parsed[9], &parsed[10], &parsed[11],
-                         &parsed[12], &parsed[13]);
-  if ((ret != 7) && (ret != 8) && (ret != 9) && (ret != 11) && (ret != 12) && (ret != 16)) return;
-  if (strcmp(isok, "OK")) return;
-  if ((strcmp(rtype, "CC") == 0) && (ret == 8)) { /* hawotempdev2016 */
-    stype = 'H';
-    if ((parsed[0] == 0xff) && (parsed[1] == 0xff)) {
-      /* Sensor reported invalid data on the device. */
-    } else {
-      newtemp = ((165.0 / 16383.0) * (double)(((parsed[0] & 0x3f) << 8) | parsed[1])) - 40.0;
+    VERBPRINT(1, "\n");
+  } else { /* normal JeeLink OR CUL */
+    if (receivertype == RECTCUL) {
+      uint8_t rawbytes[LLSIZE];
+      int ppos;
+      /* Instead of implementing all the logic below twice, we convert the
+       * raw format from the CUL into the preprocessed format a Jeelink would
+       * deliver. Waaaaaay less work. */
+      /* Example strings the receiver may spit out:
+       * N02CC3A06F7604A9332EC0A04F6CCAB4D3058D5C5769932D398 (not with default culfw)
+       * N019CC4503651AAAA000381FFEB (default culfw, at most 12 bytes data) */
+      if ((strncmp(&origlastline[0], "N01", 3) != 0)
+       && (strncmp(&origlastline[0], "N02", 3) != 0)) {
+        return; /* Not a string containing a raw packet */
+      }
+      ppos = 0;
+      while (strlen(&origlastline[3 + ppos * 2]) >= 2) {
+        ret = sscanf(&origlastline[3 + ppos * 2], "%02hhx", &rawbytes[ppos]);
+        if (ret != 1) return; /* non-hex stuff - invalid data */
+        ppos++;
+      }
+      if (ppos < 6) return; /* This cannot be valid, it's too short */
+      if (rawbytes[0] == 0xcc) { /* "Custom" sensor */
+        /* Format: SSSSSSSS  IIIIIIII  BBBBBBBB  DDDDDDDD [...] DDDDDDDD  CCCCCCCC */
+        int i;
+        int datalen = rawbytes[2];
+        if ((datalen+3) >= ppos) { /* This is not long enough */
+          if (ppos == 12) {
+            /* By default, culfw only receives up to 12 bytes long packets.
+             * To fix this, you need to modify the file clib/rf_native.c in culfw
+             * and increase CC1100_FIFOTHR from the default 2 to at least 4 (=20
+             * bytes RX FIFO, that still leaves 45 bytes for the TX FIFO), then
+             * recompile the fw and reflash your CUL. */
+            VERBPRINT(3, "Discarding received custom sensor packet - claimed data"
+                         " length %d is too long for packet length %d. Note: this"
+                         " might be caused by a default culfw limitation.\n",
+                         datalen, ppos);
+          } else {
+            VERBPRINT(3, "Discarding received custom sensor packet - claimed data"
+                         " length %d is too long for packet length %d\n",
+                         datalen, ppos);
+          }
+          return;
+        }
+        if (lcccrc(&rawbytes[0], datalen + 3) != rawbytes[datalen + 3]) { /* bad CRC */
+          VERBPRINT(3, "Discarding received custom sensor packet due to CRC fail\n");
+          return;
+        }
+        sprintf(lastline, "OK CC %u", rawbytes[1]);
+        for (i = 0; i < datalen; i++) {
+          unsigned char decspf[10];
+          sprintf(decspf, " %u", rawbytes[i+3]);
+          strcat(lastline, decspf);
+        }
+      } else if ((rawbytes[0] & 0xf0) == 0x90) { /* "LaCrosse" sensor */
+        /* Packets are always 5 bytes, and thanks to LaCrosseITPlusReader we
+         * know the format: SSSS.DDDD DDN_.TTTT TTTT.TTTT WHHH.HHHH CCCC.CCCC
+         * (see LaCrosseITPlusReader for detailed explanation) */
+        unsigned int rtemp;
+        sid = ((rawbytes[0] & 0x0f) << 2) | (rawbytes[1] >> 6);
+        /* Check CRC */
+        if (lcccrc(&rawbytes[0], 4) != rawbytes[4]) { /* bad CRC */
+          VERBPRINT(3, "Discarding received LaCrosse sensor data due to CRC fail\n");
+          return;
+        }
+        /* Temp is BCD (binary coded decimal) which is not nice to process :-/ */
+        /* On the other hand, it permits us to do some more sanity checks,
+         * hopefully catching more errors that the CRC did not */
+        if (((rawbytes[2] >> 4) >= 10) || ((rawbytes[2] & 0x0f) >= 10)) {
+          VERBPRINT(3, "Discarding received LaCrosse sensor data due to invalid BCD data\n");
+          return;
+        }
+        rtemp = (rawbytes[1] & 0x0f) * 100;
+        rtemp += (rawbytes[2] >> 4) * 10;
+        rtemp += (rawbytes[2] & 0x0f);
+        /* the format received from the sensor is (temp - 40.0), what goes out in
+         * the JeeLink packet is (temp + 100.0) instead. Why? I have no clue. */
+        rtemp += 600; /* 100 - 40 */
+        sprintf(lastline, "OK 9 %u %u %u %u %u",
+                          sid,
+                          ((rawbytes[1] & 0x20) == 0x20) ? 129 : 1, /* this would also encode a sensor type, but we don't parse that below anyways */
+                          (rtemp >> 8),
+                          (rtemp & 0xff),
+                          rawbytes[3]);
+      } else { /* not a known sensor type */
+        return;
+      }
     }
-    newhum = (100.0 / 16383.0) * (double)((parsed[2] << 8) | parsed[3]);
-    newvolt = 3.0 * (parsed[4] / 255.0);
-    VERBPRINT(1, "Received data from H-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
-                 sid, newtemp, newhum, newvolt);
-  } else if ((strcmp(rtype, "CC") == 0) && (ret == 9)) { /* foxtempdev2016 */
-    if (parsed[0] != 0xf7)  return; /* 'subtype' is not foxtemp (0xf7) */
-    stype = 'F';
-    newtemp = (-45.00 + 175.0 * ((double)((parsed[1] << 8) | parsed[2]) / 65535.0));
-    newhum = (100.0 * ((double)((parsed[3] << 8) | parsed[4]) / 65535.0));
-    newvolt = (3.3 * parsed[5]) / 255.0;
-    VERBPRINT(1, "Received data from F-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
-                 sid, newtemp, newhum, newvolt);
-  } else if ((strcmp(rtype, "CC") == 0) && (ret == 11)) { /* foxgeig2018 */
-    if (parsed[0] != 0xf9)  return; /* 'subtype' is not foxgeig (0xf9) */
-    stype = 'G';
-    newcpm1 = ((uint32_t)parsed[1] << 16) | ((uint32_t)parsed[2] << 8)
-            | ((uint32_t)parsed[3]);
-    newcpm60 = ((uint32_t)parsed[4] << 16) | ((uint32_t)parsed[5] << 8)
-             | ((uint32_t)parsed[6]);
-    newvolt = 6.6 * (parsed[7] / 255.0);
-    VERBPRINT(1, "Received data from G-sensor %u: cpm1=%lu cpm60=%lu v=%.2lf\n",
-                 sid, (unsigned long)newcpm1, (unsigned long)newcpm60, newvolt);
-  } else if ((strcmp(rtype, "CC") == 0) && (ret == 12)) { /* hawotempdev2018 / foxtempdev with pressure sensor */
-    uint32_t newpraw;
-    if (parsed[0] != 0xfd)  return; /* 'subtype' is not hawotempdev2018 (0xfd) */
-    stype = 'D';
-    newtemp = (-45.00 + 175.0 * ((double)((parsed[1] << 8) | parsed[2]) / 65535.0));
-    newhum = (100.0 * ((double)((parsed[3] << 8) | parsed[4]) / 65535.0));
-    newvolt = (3.3 * parsed[5]) / 255.0;
-    newpraw = (((uint32_t)parsed[8] << 16) | ((uint32_t)parsed[7] <<  8)
-             | ((uint32_t)parsed[6] <<  0));
-    newpress = (double)newpraw / 4096.0;
-    VERBPRINT(1, "Received data from D-sensor %u: t=%.2lf h=%.2lf v=%.2lf p=%.3lf\n",
-                 sid, newtemp, newhum, newvolt, newpress);
-  } else if ((strcmp(rtype, "CC") == 0) && (ret == 16)) { /* foxstaub2018, 2022 edition */
-    uint32_t newpraw;
-    if (parsed[0] != 0xf5)  return; /* 'subtype' is not foxstaub (0xf5) */
-    stype = 'S';
-    newpraw = (((uint32_t)parsed[1] << 16) | ((uint32_t)parsed[2] <<  8)
-             | ((uint32_t)parsed[3] <<  0));
-    if (newpraw != 0xffffff) {
+    /* OK CC 7 23 144 34 53 133                           hawotempdev2016 length=8 */
+    /* OK CC 8 247 98 194 159 169 198                     foxtempdev2016  length=9 */
+    /* OK 9 9 1 4 194 32                                  lacrosse        length=7 */
+    /* OK CC 7 245 1 151 87 51 120 96 97 0 33 0 95 0      foxstaub2018    length=16 */
+    /* OK CC 2 249 0 0 34 0 0 26 157                      foxgeig2018     length=11 */
+    /* OK CC 7 253 99 175 152 104 230 119 60 62           hawotempdev2018 length=12 */
+    ret = sscanf(lastline, "%s %s %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u",
+                           &isok[0], &rtype[0], &sid, &parsed[0], &parsed[1],
+                           &parsed[2], &parsed[3], &parsed[4], &parsed[5], &parsed[6],
+                           &parsed[7], &parsed[8], &parsed[9], &parsed[10], &parsed[11],
+                           &parsed[12], &parsed[13]);
+    if ((ret != 7) && (ret != 8) && (ret != 9) && (ret != 11) && (ret != 12) && (ret != 16)) return;
+    if (strcmp(isok, "OK")) return;
+    if ((strcmp(rtype, "CC") == 0) && (ret == 8)) { /* hawotempdev2016 */
+      stype = 'H';
+      if ((parsed[0] == 0xff) && (parsed[1] == 0xff)) {
+        /* Sensor reported invalid data on the device. */
+      } else {
+        newtemp = ((165.0 / 16383.0) * (double)(((parsed[0] & 0x3f) << 8) | parsed[1])) - 40.0;
+      }
+      newhum = (100.0 / 16383.0) * (double)((parsed[2] << 8) | parsed[3]);
+      newvolt = 3.0 * (parsed[4] / 255.0);
+      VERBPRINT(1, "Received data from H-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
+                   sid, newtemp, newhum, newvolt);
+    } else if ((strcmp(rtype, "CC") == 0) && (ret == 9)) { /* foxtempdev2016 */
+      if (parsed[0] != 0xf7)  return; /* 'subtype' is not foxtemp (0xf7) */
+      stype = 'F';
+      newtemp = (-45.00 + 175.0 * ((double)((parsed[1] << 8) | parsed[2]) / 65535.0));
+      newhum = (100.0 * ((double)((parsed[3] << 8) | parsed[4]) / 65535.0));
+      newvolt = (3.3 * parsed[5]) / 255.0;
+      VERBPRINT(1, "Received data from F-sensor %u: t=%.2lf h=%.2lf v=%.2lf\n",
+                   sid, newtemp, newhum, newvolt);
+    } else if ((strcmp(rtype, "CC") == 0) && (ret == 11)) { /* foxgeig2018 */
+      if (parsed[0] != 0xf9)  return; /* 'subtype' is not foxgeig (0xf9) */
+      stype = 'G';
+      newcpm1 = ((uint32_t)parsed[1] << 16) | ((uint32_t)parsed[2] << 8)
+              | ((uint32_t)parsed[3]);
+      newcpm60 = ((uint32_t)parsed[4] << 16) | ((uint32_t)parsed[5] << 8)
+               | ((uint32_t)parsed[6]);
+      newvolt = 6.6 * (parsed[7] / 255.0);
+      VERBPRINT(1, "Received data from G-sensor %u: cpm1=%lu cpm60=%lu v=%.2lf\n",
+                   sid, (unsigned long)newcpm1, (unsigned long)newcpm60, newvolt);
+    } else if ((strcmp(rtype, "CC") == 0) && (ret == 12)) { /* hawotempdev2018 / foxtempdev with pressure sensor */
+      uint32_t newpraw;
+      if (parsed[0] != 0xfd)  return; /* 'subtype' is not hawotempdev2018 (0xfd) */
+      stype = 'D';
+      newtemp = (-45.00 + 175.0 * ((double)((parsed[1] << 8) | parsed[2]) / 65535.0));
+      newhum = (100.0 * ((double)((parsed[3] << 8) | parsed[4]) / 65535.0));
+      newvolt = (3.3 * parsed[5]) / 255.0;
+      newpraw = (((uint32_t)parsed[8] << 16) | ((uint32_t)parsed[7] <<  8)
+               | ((uint32_t)parsed[6] <<  0));
       newpress = (double)newpraw / 4096.0;
-    }
-    if ((parsed[4] != 0xff) || (parsed[5] != 0xff)) {
-      newtemp = (-45.00 + 175.0 * ((double)((parsed[4] << 8) | parsed[5]) / 65535.0));
-      newhum = (100.0 * ((double)((parsed[6] << 8) | parsed[7]) / 65535.0));
-    }
-    newpm2_5 = ((double)((parsed[8] << 8) | parsed[9])) / 10.0;
-    newpm10 = ((double)((parsed[10] << 8) | parsed[11])) / 10.0;
-    /* Voltage is a bit complicated: reference voltage is set to 2.56V,
-     * so 255 == 2.56V at the ADC pin. The ADC pin however is connected
-     * through a 10M/1M voltage divider, so 1V at the ADC pin is actually
-     * 11V at the battery. */
-    newvolt = ((double)parsed[12] / 100.0) * 11.0;
-    VERBPRINT(1, "Received data from S-sensor %u: t=%.2lf h=%.2lf p=%.3lf pm2_5=%.1lf pm10=%.1lf v=%.2lf\n",
-                 sid, newtemp, newhum, newpress, newpm2_5, newpm10, newvolt);
-  } else if ((strcmp(rtype, "9") == 0) && (ret == 7)) { /* cheap lacrosse */
-    stype = 'L';
-    newtemp = ((double)((parsed[1] << 8) | parsed[2]) - 1000.0) / 10.0;
-    newhum = (double)(parsed[3] & 0x7f);
-    if ((parsed[3] & 0x80)) { /* There is no real voltage measurement available */
-      newvolt = 1.0;          /* just a weak battery flag. We take a weak */
-    } else {                  /* battery as having 1.0 volt and everything else */
-      newvolt = 2.5;          /* as having 2.5 volt. */
-    }
-    if (newhum == 106) { /* has no humidity sensor */
-      VERBPRINT(1, "Received data from L-sensor %u: t=%.2lf NOHUMSENS%s%s\n",
-                   sid, newtemp,
-                   ((parsed[0] & 0x80) ? " NEWBATT" : ""),
-                   ((parsed[3] & 0x80) ? " WEAKBATT" : ""));
+      VERBPRINT(1, "Received data from D-sensor %u: t=%.2lf h=%.2lf v=%.2lf p=%.3lf\n",
+                   sid, newtemp, newhum, newvolt, newpress);
+    } else if ((strcmp(rtype, "CC") == 0) && (ret == 16)) { /* foxstaub2018, 2022 edition */
+      uint32_t newpraw;
+      if (parsed[0] != 0xf5)  return; /* 'subtype' is not foxstaub (0xf5) */
+      stype = 'S';
+      newpraw = (((uint32_t)parsed[1] << 16) | ((uint32_t)parsed[2] <<  8)
+               | ((uint32_t)parsed[3] <<  0));
+      if (newpraw != 0xffffff) {
+        newpress = (double)newpraw / 4096.0;
+      }
+      if ((parsed[4] != 0xff) || (parsed[5] != 0xff)) {
+        newtemp = (-45.00 + 175.0 * ((double)((parsed[4] << 8) | parsed[5]) / 65535.0));
+        newhum = (100.0 * ((double)((parsed[6] << 8) | parsed[7]) / 65535.0));
+      }
+      newpm2_5 = ((double)((parsed[8] << 8) | parsed[9])) / 10.0;
+      newpm10 = ((double)((parsed[10] << 8) | parsed[11])) / 10.0;
+      /* Voltage is a bit complicated: reference voltage is set to 2.56V,
+       * so 255 == 2.56V at the ADC pin. The ADC pin however is connected
+       * through a 10M/1M voltage divider, so 1V at the ADC pin is actually
+       * 11V at the battery. */
+      newvolt = ((double)parsed[12] / 100.0) * 11.0;
+      VERBPRINT(1, "Received data from S-sensor %u: t=%.2lf h=%.2lf p=%.3lf pm2_5=%.1lf pm10=%.1lf v=%.2lf\n",
+                   sid, newtemp, newhum, newpress, newpm2_5, newpm10, newvolt);
+    } else if ((strcmp(rtype, "9") == 0) && (ret == 7)) { /* cheap lacrosse */
+      stype = 'L';
+      newtemp = ((double)((parsed[1] << 8) | parsed[2]) - 1000.0) / 10.0;
+      newhum = (double)(parsed[3] & 0x7f);
+      if ((parsed[3] & 0x80)) { /* There is no real voltage measurement available */
+        newvolt = 1.0;          /* just a weak battery flag. We take a weak */
+      } else {                  /* battery as having 1.0 volt and everything else */
+        newvolt = 2.5;          /* as having 2.5 volt. */
+      }
+      if (newhum == 106.0) { /* has no humidity sensor */
+        VERBPRINT(1, "Received data from L-sensor %u: t=%.2lf NOHUMSENS%s%s\n",
+                     sid, newtemp,
+                     ((parsed[0] & 0x80) ? " NEWBATT" : ""),
+                     ((parsed[3] & 0x80) ? " WEAKBATT" : ""));
+      } else {
+        VERBPRINT(1, "Received data from L-sensor %u: t=%.2lf h=%.2lf%s%s\n",
+                     sid, newtemp, newhum,
+                     ((parsed[0] & 0x80) ? " NEWBATT" : ""),
+                     ((parsed[3] & 0x80) ? " WEAKBATT" : ""));
+      }
     } else {
-      VERBPRINT(1, "Received data from L-sensor %u: t=%.2lf h=%.2lf%s%s\n",
-                   sid, newtemp, newhum,
-                   ((parsed[0] & 0x80) ? " NEWBATT" : ""),
-                   ((parsed[3] & 0x80) ? " WEAKBATT" : ""));
+      return; /* Not a known/supported sensor */
     }
-  } else {
-    return; /* Not a known/supported sensor */
-  }
+  } /* Normal JeeLink or CUL */
   curdd = dd;
   while (curdd != NULL) {
     if ((curdd->sensortype == stype)
      && (curdd->sensorid == sid)) { /* This sensor type+ID is requested */
       curdd->lastseen = time(NULL);
-      curdd->lasttemp = newtemp;
-      curdd->lasthum = newhum;
-      curdd->lastvoltage = newvolt;
-      curdd->lastpressure = newpress;
+      /* We need special handling for the davis here, as it does not transmit
+       * all values at the same time. So for the davis, only update those values
+       * that were really transmitted. */
+      if ((curdd->sensortype != 'V') || (newtemp > -274.0)) {
+        curdd->lasttemp = newtemp;
+      }
+      if ((curdd->sensortype != 'V') || (newhum != 106.0)) {
+        curdd->lasthum = newhum;
+      }
+      if ((curdd->sensortype != 'V') || (newvolt > 0.0)) {
+        curdd->lastvoltage = newvolt;
+      }
+      if ((curdd->sensortype != 'V') || (newpress > -1.0)) {
+        curdd->lastpressure = newpress;
+      }
       curdd->lastpm2_5 = newpm2_5;
       curdd->lastpm10 = newpm10;
+      if ((curdd->sensortype != 'V') || (newsolar > -1.0)) {
+        curdd->lastsolar = newsolar;
+      }
+      if ((curdd->sensortype != 'V') || (newuv > -1.0)) {
+        curdd->lastuv = newuv;
+      }
+      if ((curdd->sensortype != 'V') || (newrainrate > -1.0)) {
+        curdd->lastrainrate = newrainrate;
+      }
       curdd->lastcpm1 = newcpm1;
       curdd->lastcpm60 = newcpm60;
+      if ((curdd->sensortype != 'V') || (newraintipcount != 0xffffffff)) {
+        curdd->lastraintipcount = newraintipcount;
+      }
     }
     curdd = curdd->next;
   }
@@ -635,6 +815,8 @@ int main(int argc, char ** argv)
       runinforeground = 1;
     } else if (strcmp(argv[curarg], "-C") == 0) {
       receivertype = RECTCUL;
+    } else if (strcmp(argv[curarg], "-D") == 0) {
+      receivertype = RECTJEELDAVISV;
     } else if (strcmp(argv[curarg], "-h") == 0) {
       usage(argv[0]); exit(0);
     } else if (strcmp(argv[curarg], "--help") == 0) {
@@ -685,6 +867,14 @@ int main(int argc, char ** argv)
 
       if (curarg >= argc) continue;
       newdd = calloc(sizeof(struct daemondata), 1);
+      /* Initialize contents to 'invalid' markers where applicable */
+      newdd->lasthum = 106.0;
+      newdd->lasttemp = -274.0;
+      newdd->lastpressure = -1.0;
+      newdd->lastsolar = -1.0;
+      newdd->lastuv = -1.0;
+      newdd->lastrainrate = -1.0;
+      newdd->lastraintipcount = 0xffffffff;
       newdd->next = mydaemondata;
       mydaemondata = newdd;
       l = sscanf(argv[curarg], "%999[^:]:%u:%999[^\n]",
@@ -716,6 +906,8 @@ int main(int argc, char ** argv)
         case 'd':
         case 'H':
         case 'h':
+        case 'V':
+        case 'v':
                   mydaemondata->sensortype = toupper(sensorid[0]);
                   break;
         default:
@@ -762,6 +954,9 @@ int main(int argc, char ** argv)
     {
       /* configure serial port parameters */
       struct termios tio;
+      /* Init string is assembled in two stages: First the static part, then
+       * the part that depends on settings or sensors. */
+      /* Static part: */
       if (receivertype == RECTJEELINK) {
         strcpy(jlinitstr, "0a "); /* Turn off that annoying ultrabright blue LED */
       } else if (receivertype == RECTCUL) {
@@ -774,7 +969,14 @@ int main(int argc, char ** argv)
          * and sending it repeatedly will wear down the EEPROM.
          * Just send it once manually, e.g. with something like
          * "echo l00 > /dev/ttyACMn" in a terminal. */
+      } else if (receivertype == RECTJEELDAVISV) {
+        strcpy(jlinitstr, "2b"); /* radio band: EU */
+        strcat(jlinitstr, "0d"); /* debug mode: off */
+        strcat(jlinitstr, "0l"); /* activity LED: off */
+        strcat(jlinitstr, "0p"); /* show raw payload data: off */
+        strcat(jlinitstr, "1r"); /* receive mode: enable */
       }
+      /* dynamic part: */
       if (receivertype == RECTJEELINK) {
         if (forcebitrate == 0) {
           if (havefastsensors) { /* do we have at least 1 sensor that could use the faster rate of 17241? */
@@ -831,12 +1033,28 @@ int main(int argc, char ** argv)
         strcat(jlinitstr, "Cw1d81\r\n");
         /* Show values of AGCTRL2-AGCTRL0 registers */
         /*strcat(jlinitstr, "C1b\r\nC1c\r\nC1d\r\n"); */
+      } else if (receivertype == RECTJEELDAVISV) {
+        struct daemondata * curdd;
+        /* FIXME: this really should to be modifyable on the commandline.
+         * as should the station type below. */
+        strcat(jlinitstr, "300h"); /* height above sealevel in m: 300 */
+        curdd = mydaemondata;
+        while (curdd != NULL) {
+          if (curdd->sensortype == 'V') {
+            sprintf(&jlinitstr[strlen(jlinitstr)], "%d,0s", curdd->sensorid);
+          }
+          curdd = curdd->next;
+        }
+        strcat(jlinitstr, "v");
       }
+      VERBPRINT(4, "Assembled initstring is: %s\n", jlinitstr);
       tcgetattr(serialfd, &tio);
       if (receivertype == RECTJEELINK) {
         cfsetspeed(&tio, B57600);
       } else if (receivertype == RECTCUL) {
         cfsetspeed(&tio, B115200);
+      } else if (receivertype == RECTJEELDAVISV) {
+        cfsetspeed(&tio, B57600);
       }
       tio.c_lflag &= ~(ICANON | ECHO); /* Clear ICANON and ECHO. */
       tio.c_iflag &= ~(IXON | IGNBRK); /* no flow control */
